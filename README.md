@@ -197,3 +197,41 @@ ls /tmp/ixl/
 ```bash
 IXL_EMAIL="jdoe@myschool" IXL_PASSWORD="pass" ixl assigned --json
 ```
+
+## OpenClaw Skill
+
+Use `ixl` as an OpenClaw agent skill for automated daily reports via Signal.
+
+### 1. Add the agent
+
+Copy the agent definition from `openclaw-agent.yaml` into your OpenClaw `agents.yaml`:
+
+```bash
+cat openclaw-agent.yaml >> ~/.openclaw/agents.yaml
+```
+
+### 2. Install ixl on the server
+
+```bash
+pip install git+https://github.com/bearyjd/ixl
+pip install 'ixl[browser]'
+playwright install chromium
+```
+
+### 3. Configure accounts
+
+Set up `~/.ixl/accounts.env` with your student credentials (see "Cron (Multiple Students)" section above):
+
+```bash
+cp cron/accounts.env.example ~/.ixl/accounts.env
+chmod 600 ~/.ixl/accounts.env
+# Edit with your student logins
+```
+
+### 4. Create schedule in OpenClaw app
+
+- **Name:** IXL Daily Report
+- **Cron:** `0 6 * * *` (daily at 6am)
+- **Prompt:** "Run the daily IXL report for all kids and send it to me via Signal."
+
+The agent uses Haiku model (`anthropic/claude-3-5-haiku-20241022`) for cost-effective formatting (~$0.001 per report).
