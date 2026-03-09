@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "ixl"
 version = "0.2.0"
 description = "IXL student account CLI scraper"
-license = {text = "MIT"}
+license = "MIT"
 requires-python = ">=3.10"
 dependencies = [
     "requests>=2.28",
@@ -17,3 +17,6 @@ browser = ["playwright>=1.40"]
 
 [project.scripts]
 ixl = "ixl_cli.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["ixl_cli*"]
