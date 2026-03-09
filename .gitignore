@@ -1,0 +1,11 @@
+.env
+*.env
+!.env.example
+!cron/accounts.env.example
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+session.json
+NOTES.md
