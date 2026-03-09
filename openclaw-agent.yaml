@@ -15,7 +15,7 @@
 # OUTPUTS:
 #   - Friendly daily report sent via Signal
 #   - JSON summaries cached in /tmp/ixl/ for trend tracking
-#   - Memory keys: ixl-last-ford, ixl-last-jack, ixl-last-penn
+#   - Memory keys: ixl-last-{name} per child
 
 agents:
   - name: ixl-reporter
@@ -28,9 +28,9 @@ agents:
       4. Store totals in memory for trend tracking
 
       ## Children (NO passwords in prompts — use accounts.env)
-      - Ford: fbeary@stmarkscs (2nd grade)
-      - Jack: jbeary@stmarkscs (7th grade)
-      - Pennington: pbeary@stmarkscs (5th grade)
+
+      Children are listed in ~/.ixl/accounts.env (format: name:email@school:password).
+      Read that file to discover child names, emails, and grades.
 
       ## How to Scrape All Kids at Once
 
@@ -39,15 +39,12 @@ agents:
       bash /path/to/ixl-scrape/cron/ixl-cron.sh
       ```
       This reads ~/.ixl/accounts.env and writes to /tmp/ixl/:
-      - ford-assigned.json, ford-summary.json
-      - jack-assigned.json, jack-summary.json
-      - penn-assigned.json, penn-summary.json
+      - {name}-assigned.json, {name}-summary.json (one pair per child)
 
       **Option B: Per-child manual (if cron unavailable)**
       ```bash
-      IXL_EMAIL="fbeary@stmarkscs" IXL_PASSWORD="$(grep fbeary ~/.ixl/accounts.env | cut -d: -f3)" ixl assigned --json
-      IXL_EMAIL="jbeary@stmarkscs" IXL_PASSWORD="$(grep jbeary ~/.ixl/accounts.env | cut -d: -f3)" ixl assigned --json
-      IXL_EMAIL="pbeary@stmarkscs" IXL_PASSWORD="$(grep pbeary ~/.ixl/accounts.env | cut -d: -f3)" ixl assigned --json
+      # For each line in accounts.env (name:email:password):
+      IXL_EMAIL="<email>" IXL_PASSWORD="<password>" ixl assigned --json
       ```
 
       ## Available IXL Commands
@@ -113,15 +110,15 @@ agents:
       ```
       📚 IXL Daily — [date]
 
-      Ford (2nd): 38/136 done, 98 remaining
+      Child1 (Nth): 38/136 done, 98 remaining
         Math: 25/100 · ELA: 10/30 · Spanish: 3/6
 
-      Jack (7th): ✅ All clear
+      Child2 (Nth): ✅ All clear
 
-      Penn (5th): 13/17 done, 4 remaining
+      Child3 (Nth): 13/17 done, 4 remaining
         Math: 13/17
 
-      🔥 Trouble: Ford struggling with [skill name]
+      🔥 Trouble: Child1 struggling with [skill name]
       ```
 
       ## Formatting Rules
@@ -142,9 +139,7 @@ agents:
       3. **Format**: Create friendly report using template above
       4. **Send**: Use Signal tool to send report to configured recipient
       5. **Store**: Save daily totals to memory with keys:
-         - `ixl-last-ford`: {date, done, remaining, subjects}
-         - `ixl-last-jack`: {date, done, remaining, subjects}
-         - `ixl-last-penn`: {date, done, remaining, subjects}
+         - `ixl-last-{name}`: {date, done, remaining, subjects} (one per child)
 
       ## Signal Integration
 
@@ -155,7 +150,7 @@ agents:
 
       Store daily totals using the memory tool. Example:
       ```
-      memory_set("ixl-last-ford", {"date": "2025-03-08", "done": 38, "remaining": 98, "subjects": {"Math": "25/100", "ELA": "10/30"}})
+      memory_set("ixl-last-<name>", {"date": "2025-03-08", "done": 38, "remaining": 98, "subjects": {"Math": "25/100", "ELA": "10/30"}})
       ```
 
       This allows you to track progress over time and spot trends.

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # install-lxc.sh — Install ixl CLI on OpenClaw LXC
 #
-#   scp install-lxc.sh root@192.168.1.14:/tmp/
-#   ssh root@192.168.1.14 bash /tmp/install-lxc.sh
+#   scp install-lxc.sh root@<LXC_IP>:/tmp/
+#   ssh root@<LXC_IP> bash /tmp/install-lxc.sh
 #
-#   ssh root@192.168.1.14 'bash -s' < install-lxc.sh
+#   ssh root@<LXC_IP> 'bash -s' < install-lxc.sh
 
 set -euo pipefail
 
@@ -93,35 +93,35 @@ mkdir -p ~/.ixl && chmod 700 ~/.ixl
 if [[ -f ~/.ixl/accounts.env ]]; then
     log "accounts.env already exists — not overwriting"
 else
-    log "Creating accounts.env..."
-    cat > ~/.ixl/accounts.env << 'EOF'
-ford:fbeary@stmarkscs:lions2025!
-jack:jbeary@stmarkscs:lions2025!
-penn:pbeary@stmarkscs:lions2025!
-EOF
-    chmod 600 ~/.ixl/accounts.env
+    log "No accounts.env found. Create it manually:"
+    log "  cat > ~/.ixl/accounts.env << 'EOF'"
+    log "  child1:user1@school:password1"
+    log "  child2:user2@school:password2"
+    log "  EOF"
+    log "  chmod 600 ~/.ixl/accounts.env"
 fi
 
 if [[ -f ~/.ixl/.env ]]; then
     log ".env already exists — not overwriting"
 else
-    log "Creating default .env (Ford)..."
-    cat > ~/.ixl/.env << 'EOF'
-IXL_EMAIL="fbeary@stmarkscs"
-IXL_PASSWORD="lions2025!"
-EOF
-    chmod 600 ~/.ixl/.env
+    log "No default .env found. Create it manually:"
+    log "  cat > ~/.ixl/.env << 'EOF'"
+    log '  IXL_EMAIL="user@school"'
+    log '  IXL_PASSWORD="password"'
+    log "  EOF"
+    log "  chmod 600 ~/.ixl/.env"
 fi
 
 # ---------------------------------------------------------------
 # 6. Smoke test
 # ---------------------------------------------------------------
-log "Running smoke test: ixl assigned --json (Ford)..."
-if ixl assigned --json > /dev/null 2>&1; then
+log "Running smoke test: ixl assigned --json..."
+if [[ -f ~/.ixl/.env ]] && ixl assigned --json > /dev/null 2>&1; then
     log "Smoke test PASSED"
 else
-    log "WARN: Smoke test failed — may need /dev/shm or apparmor fix for Chromium in LXC"
-    log "  Try: mount -t tmpfs -o size=256m tmpfs /dev/shm"
+    log "WARN: Smoke test skipped or failed"
+    log "  If .env is missing, create it first (see above)"
+    log "  If Chromium fails in LXC: mount -t tmpfs -o size=256m tmpfs /dev/shm"
 fi
 
 log "Testing multi-account cron script..."

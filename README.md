@@ -210,23 +210,15 @@ Copy the agent definition from `openclaw-agent.yaml` into your OpenClaw `agents.
 cat openclaw-agent.yaml >> ~/.openclaw/agents.yaml
 ```
 
-### 2. Install ixl on the server
+### 2. Install on LXC / remote server
 
 ```bash
-pip install git+https://github.com/bearyjd/ixl
-pip install 'ixl[browser]'
-playwright install chromium
+ssh root@<LXC_IP> 'bash -s' < install-lxc.sh
 ```
 
-### 3. Configure accounts
+This installs system deps, the `ixl` CLI, Playwright + Chromium, and clones the repo for the cron script. Idempotent — safe to re-run.
 
-Set up `~/.ixl/accounts.env` with your student credentials (see "Cron (Multiple Students)" section above):
-
-```bash
-cp cron/accounts.env.example ~/.ixl/accounts.env
-chmod 600 ~/.ixl/accounts.env
-# Edit with your student logins
-```
+After install, create `~/.ixl/accounts.env` and `~/.ixl/.env` on the server (see "Cron (Multiple Students)" section above).
 
 ### 4. Create schedule in OpenClaw app
 
