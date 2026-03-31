@@ -11,6 +11,8 @@ Student name is extracted from the trouble-spots API response
 
 from typing import Optional
 
+import requests
+
 from ixl_cli.session import ALL_SUBJECTS, IXLSession, _log
 
 
@@ -30,17 +32,20 @@ def scrape_children(session: IXLSession) -> list[dict]:
 
     end = date.today()
     start = end - timedelta(days=30)
-    data = session.fetch_json(
-        "/analytics/trouble-spots/run",
-        params={
-            "startDate": start.isoformat(),
-            "endDate": end.isoformat(),
-            "subjects": ALL_SUBJECTS,
-            "lowGrade": "-2",
-            "highGrade": "12",
-        },
-        method="POST",
-    )
+    try:
+        data = session.fetch_json(
+            "/analytics/trouble-spots/run",
+            params={
+                "startDate": start.isoformat(),
+                "endDate": end.isoformat(),
+                "subjects": ALL_SUBJECTS,
+                "lowGrade": "-2",
+                "highGrade": "12",
+            },
+            method="POST",
+        )
+    except requests.exceptions.HTTPError:
+        data = None
 
     if isinstance(data, dict):
         first = data.get("firstName", "")
@@ -54,15 +59,18 @@ def scrape_children(session: IXLSession) -> list[dict]:
 
     # Try to get grade from score-grid-defaults
     school_year_start = date(end.year, 8, 1) if end.month >= 8 else date(end.year - 1, 8, 1)
-    defaults = session.fetch_json(
-        "/analytics/score-grid-defaults",
-        params={
-            "startDate": school_year_start.isoformat(),
-            "endDate": end.isoformat(),
-            "subjects": ALL_SUBJECTS,
-            "student": "",
-        },
-    )
+    try:
+        defaults = session.fetch_json(
+            "/analytics/score-grid-defaults",
+            params={
+                "startDate": school_year_start.isoformat(),
+                "endDate": end.isoformat(),
+                "subjects": ALL_SUBJECTS,
+                "student": "",
+            },
+        )
+    except requests.exceptions.HTTPError:
+        defaults = None
     if isinstance(defaults, dict):
         grade_num = defaults.get("grade")
         if grade_num is not None:

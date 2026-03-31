@@ -12,6 +12,8 @@ skills practiced, time spent, and score changes within each session.
 from datetime import date, timedelta
 from typing import Optional
 
+import requests
+
 from ixl_cli.session import ALL_SUBJECTS, IXLSession, _log
 
 
@@ -43,18 +45,22 @@ def scrape_usage(
     end = date.today()
     start = end - timedelta(days=days)
 
-    data = session.fetch_json(
-        "/analytics/student-usage/run",
-        params={
-            "rosterClass": "",
-            "courseId": "",
-            "subjects": ALL_SUBJECTS,
-            "lowGrade": "-2",
-            "highGrade": "12",
-            "startDate": start.isoformat(),
-            "endDate": end.isoformat(),
-        },
-    )
+    try:
+        data = session.fetch_json(
+            "/analytics/student-usage/run",
+            params={
+                "rosterClass": "",
+                "courseId": "",
+                "subjects": ALL_SUBJECTS,
+                "lowGrade": "-2",
+                "highGrade": "12",
+                "startDate": start.isoformat(),
+                "endDate": end.isoformat(),
+            },
+        )
+    except requests.exceptions.HTTPError as exc:
+        _log(f"Warning: Usage API error: {exc}", session.verbose)
+        return _empty_usage(days)
 
     if not isinstance(data, dict):
         _log("Warning: No usage data returned.", session.verbose)

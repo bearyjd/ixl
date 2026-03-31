@@ -12,6 +12,8 @@ counts, scores, and grade/skill codes.
 from datetime import date, timedelta
 from typing import Optional
 
+import requests
+
 from ixl_cli.session import ALL_SUBJECTS, IXLSession, _log
 
 
@@ -46,17 +48,21 @@ def scrape_trouble_spots(
     end = date.today()
     start = end - timedelta(days=30)
 
-    data = session.fetch_json(
-        "/analytics/trouble-spots/run",
-        params={
-            "startDate": start.isoformat(),
-            "endDate": end.isoformat(),
-            "subjects": ALL_SUBJECTS,
-            "lowGrade": "-2",
-            "highGrade": "12",
-        },
-        method="POST",
-    )
+    try:
+        data = session.fetch_json(
+            "/analytics/trouble-spots/run",
+            params={
+                "startDate": start.isoformat(),
+                "endDate": end.isoformat(),
+                "subjects": ALL_SUBJECTS,
+                "lowGrade": "-2",
+                "highGrade": "12",
+            },
+            method="POST",
+        )
+    except requests.exceptions.HTTPError as exc:
+        _log(f"Warning: Trouble spots API error: {exc}", session.verbose)
+        data = None
 
     if isinstance(data, dict):
         status = data.get("status", "")
@@ -88,7 +94,10 @@ def scrape_trouble_spots(
 
     # Fallback: try the quick summary endpoint
     if not trouble_spots:
-        summary = session.fetch_json("/analytics/student-summary-practice-next")
+        try:
+            summary = session.fetch_json("/analytics/student-summary-practice-next")
+        except requests.exceptions.HTTPError:
+            summary = None
         if isinstance(summary, dict):
             ts_data = summary.get("troubleSpots", {})
             top_spots = ts_data.get("topTroubleSpots", [])

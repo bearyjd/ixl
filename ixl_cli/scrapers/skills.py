@@ -11,6 +11,8 @@ SmartScores: 0-100, 80+ = proficient, 90+ = mastered (per IXL's system).
 from datetime import date, timedelta
 from typing import Optional, Union
 
+import requests
+
 from ixl_cli.session import ALL_SUBJECTS, IXLSession, SUBJECT_IDS, _log
 
 # Map subjectInt → display name
@@ -66,26 +68,29 @@ def _fetch_score_chart(
     session: IXLSession, subject_int: int, grade_num: int,
     start_str: str, end_str: str,
 ) -> Union[dict, list, None]:
-    return session.fetch_json(
-        "/analytics/score-chart/run",
-        params={
-            "subject": str(subject_int),
-            "standardDoc": "",
-            "highscore": "true",
-            "scoresHighlighted": "none",
-            "scoresDisplayed": "all",
-            "scoringType": "best_attempt",
-            "goalOfProficient": "true",
-            "grades": str(grade_num),
-            "timePeriod": "5",
-            "startDate": start_str,
-            "endDate": end_str,
-            "subjects": ALL_SUBJECTS,
-            "rosterClass": "",
-            "courseId": "",
-            "skillSource": "1",
-        },
-    )
+    try:
+        return session.fetch_json(
+            "/analytics/score-chart/run",
+            params={
+                "subject": str(subject_int),
+                "standardDoc": "",
+                "highscore": "true",
+                "scoresHighlighted": "none",
+                "scoresDisplayed": "all",
+                "scoringType": "best_attempt",
+                "goalOfProficient": "true",
+                "grades": str(grade_num),
+                "timePeriod": "5",
+                "startDate": start_str,
+                "endDate": end_str,
+                "subjects": ALL_SUBJECTS,
+                "rosterClass": "",
+                "courseId": "",
+                "skillSource": "1",
+            },
+        )
+    except requests.exceptions.HTTPError:
+        return None
 
 
 def scrape_skills(
@@ -136,15 +141,18 @@ def scrape_skills(
     # Compute school-year start dynamically (August 1 of current or previous year)
     school_year_start = date(end.year, 8, 1) if end.month >= 8 else date(end.year - 1, 8, 1)
     start_str = school_year_start.isoformat()
-    defaults = session.fetch_json(
-        "/analytics/score-grid-defaults",
-        params={
-            "startDate": start_str,
-            "endDate": end.isoformat(),
-            "subjects": ALL_SUBJECTS,
-            "student": "",
-        },
-    )
+    try:
+        defaults = session.fetch_json(
+            "/analytics/score-grid-defaults",
+            params={
+                "startDate": start_str,
+                "endDate": end.isoformat(),
+                "subjects": ALL_SUBJECTS,
+                "student": "",
+            },
+        )
+    except requests.exceptions.HTTPError:
+        defaults = None
     default_grade = 2
     if isinstance(defaults, dict):
         g = defaults.get("grade")

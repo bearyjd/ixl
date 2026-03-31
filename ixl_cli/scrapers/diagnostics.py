@@ -8,6 +8,8 @@ diagnostic data (empty data arrays).
 
 from typing import Optional
 
+import requests
+
 from ixl_cli.session import IXLSession, SUBJECT_IDS, _log
 
 # Map subjectInt → human-readable name
@@ -35,7 +37,11 @@ def scrape_diagnostics(session: IXLSession, child: Optional[dict] = None) -> lis
     """
     session.ensure_logged_in()
 
-    data = session.fetch_json("/analytics/student-summary-diagnostic")
+    try:
+        data = session.fetch_json("/analytics/student-summary-diagnostic")
+    except requests.exceptions.HTTPError as exc:
+        _log(f"Warning: Diagnostics API error: {exc}", session.verbose)
+        return []
     if not isinstance(data, dict):
         _log("Warning: No diagnostic data returned.", session.verbose)
         return []
