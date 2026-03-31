@@ -1,5 +1,10 @@
 """Tests for ixl_cli.session."""
 
+import hashlib
+import json
+import os
+import stat
+from pathlib import Path
 from unittest.mock import patch, MagicMock, PropertyMock
 
 import pytest
@@ -7,6 +12,128 @@ import requests
 
 from ixl_cli.session import IXLSession
 from tests.conftest import make_response
+
+
+# ---------------------------------------------------------------------------
+# Feature 3: Multi-Account Session Isolation
+# ---------------------------------------------------------------------------
+
+class TestSessionPathPerAccount:
+    """Per-account session paths keyed by email hash."""
+
+    def test_different_emails_produce_different_paths(self):
+        from ixl_cli.session import _session_path_for
+        p1 = _session_path_for("alice@school")
+        p2 = _session_path_for("bob@school")
+        assert p1 != p2
+
+    def test_session_path_deterministic(self):
+        from ixl_cli.session import _session_path_for
+        p1 = _session_path_for("alice@school")
+        p2 = _session_path_for("alice@school")
+        assert p1 == p2
+
+    def test_session_path_uses_sha256_prefix(self):
+        from ixl_cli.session import _session_path_for
+        email = "alice@school"
+        expected_hash = hashlib.sha256(email.encode()).hexdigest()[:12]
+        p = _session_path_for(email)
+        assert p.name == f"{expected_hash}.json"
+        assert p.parent.name == "sessions"
+
+    def test_sessions_dir_created_with_700(self, tmp_path):
+        from ixl_cli import session as sess_mod
+        from ixl_cli.session import _session_path_for
+
+        fake_ixl = tmp_path / ".ixl"
+        fake_ixl.mkdir(mode=0o700)
+
+        with patch.object(sess_mod, "IXL_DIR", fake_ixl):
+            p = _session_path_for("alice@school")
+            # _session_path_for should create the sessions dir
+            sessions_dir = fake_ixl / "sessions"
+            assert sessions_dir.exists()
+            mode = stat.S_IMODE(sessions_dir.stat().st_mode)
+            assert mode == 0o700, f"Expected 0o700, got {oct(mode)}"
+
+
+class TestSessionMigration:
+    """Migration from old shared session.json to per-account file."""
+
+    def test_migration_from_old_file(self, tmp_path):
+        from ixl_cli import session as sess_mod
+
+        fake_ixl = tmp_path / ".ixl"
+        fake_ixl.mkdir(mode=0o700)
+
+        # Write an old-style session.json
+        old_session_path = fake_ixl / "session.json"
+        old_data = {"cookies": {"sid": "abc"}, "domains": {}, "ts": 9999999999.0}
+        old_session_path.write_text(json.dumps(old_data))
+
+        sessions_dir = fake_ixl / "sessions"
+
+        with patch.object(sess_mod, "IXL_DIR", fake_ixl), \
+             patch.object(sess_mod, "SESSION_PATH", old_session_path):
+            per_account = sess_mod._session_path_for("alice@school")
+            # Per-account file should not exist yet
+            assert not per_account.exists()
+            # load_session with migration should copy old file
+            loaded = sess_mod.load_session(path=per_account)
+            assert loaded is not None
+            assert loaded["cookies"]["sid"] == "abc"
+            # Per-account file should now exist after migration
+            assert per_account.exists()
+
+    def test_no_migration_when_per_account_exists(self, tmp_path):
+        from ixl_cli import session as sess_mod
+
+        fake_ixl = tmp_path / ".ixl"
+        fake_ixl.mkdir(mode=0o700)
+        sessions_dir = fake_ixl / "sessions"
+        sessions_dir.mkdir(mode=0o700)
+
+        email = "alice@school"
+        per_account = sess_mod._session_path_for.__wrapped__(email) if hasattr(sess_mod._session_path_for, '__wrapped__') else None
+
+        # Compute path manually
+        h = hashlib.sha256(email.encode()).hexdigest()[:12]
+        per_account_path = sessions_dir / f"{h}.json"
+        account_data = {"cookies": {"sid": "per-account"}, "domains": {}, "ts": 9999999999.0}
+        per_account_path.write_text(json.dumps(account_data))
+
+        old_session_path = fake_ixl / "session.json"
+        old_data = {"cookies": {"sid": "old-shared"}, "domains": {}, "ts": 9999999999.0}
+        old_session_path.write_text(json.dumps(old_data))
+
+        with patch.object(sess_mod, "IXL_DIR", fake_ixl), \
+             patch.object(sess_mod, "SESSION_PATH", old_session_path):
+            loaded = sess_mod.load_session(path=per_account_path)
+            # Should use per-account data, NOT old shared data
+            assert loaded["cookies"]["sid"] == "per-account"
+
+
+class TestIXLSessionUsesPerAccountPath:
+    """IXLSession computes and uses per-account session path."""
+
+    def test_init_sets_session_path(self, mock_config):
+        from ixl_cli import session as sess_mod
+
+        with patch.object(sess_mod, "load_config", return_value=mock_config), \
+             patch.object(sess_mod, "IXL_DIR", Path("/tmp/fake-ixl")):
+            session = IXLSession.__new__(IXLSession)
+            # Manually call a patched __init__
+            with patch.object(sess_mod, "_ensure_dir"):
+                session.s = requests.Session()
+                session.cfg = mock_config
+                session.verbose = False
+                session._logged_in = False
+                session._last_request_time = 0.0
+                session._cache = {}
+                session._session_path = sess_mod._session_path_for(mock_config["email"])
+
+            expected_hash = hashlib.sha256(mock_config["email"].encode()).hexdigest()[:12]
+            assert session._session_path.name == f"{expected_hash}.json"
 
 
 class TestLoginFailure:

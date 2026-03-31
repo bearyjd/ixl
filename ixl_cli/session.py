@@ -9,9 +9,11 @@ Handles:
 - Rate-limited request wrapper with exponential backoff
 """
 
+import hashlib
 import json
 import os
 import random
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -160,24 +162,45 @@ def load_config() -> dict[str, str]:
     return cfg
 
 
-def save_session(data: dict) -> None:
+def _session_path_for(email: str) -> Path:
+    """Return per-account session path: ~/.ixl/sessions/{sha256(email)[:12]}.json"""
+    sessions_dir = IXL_DIR / "sessions"
+    sessions_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    h = hashlib.sha256(email.encode()).hexdigest()[:12]
+    return sessions_dir / f"{h}.json"
+
+
+def save_session(data: dict, *, path: Optional[Path] = None) -> None:
     _ensure_dir()
+    target = path or SESSION_PATH
+    target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     data["ts"] = time.time()
     # Atomic write: write to temp file, then rename into place.
     # Use os.open to create with 0o600 from the start (no TOCTOU race).
-    tmp_path = SESSION_PATH.with_suffix(".tmp")
+    tmp_path = target.with_suffix(".tmp")
     fd = os.open(str(tmp_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:
         json.dump(data, f)
-    os.replace(str(tmp_path), str(SESSION_PATH))
+    os.replace(str(tmp_path), str(target))
 
 
-def load_session() -> Optional[dict]:
-    """Return saved session data if still fresh, else None."""
-    if not SESSION_PATH.exists():
+def load_session(*, path: Optional[Path] = None) -> Optional[dict]:
+    """Return saved session data if still fresh, else None.
+
+    If *path* doesn't exist but the legacy shared SESSION_PATH does,
+    migrate (copy) the old file to *path* so subsequent runs use it.
+    """
+    target = path or SESSION_PATH
+
+    # Migration: copy legacy shared session to per-account path
+    if not target.exists() and target != SESSION_PATH and SESSION_PATH.exists():
+        target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        shutil.copy2(str(SESSION_PATH), str(target))
+
+    if not target.exists():
         return None
     try:
-        with open(SESSION_PATH) as f:
+        with open(target) as f:
             data = json.load(f)
     except (json.JSONDecodeError, OSError):
         return None
@@ -205,6 +228,7 @@ class IXLSession:
         self._logged_in = False
         self._last_request_time = 0.0
         self._cache: dict = {}
+        self._session_path = _session_path_for(self.cfg["email"])
 
     def _sleep_if_needed(self) -> None:
         """Add jitter between requests. IXL is pickier — use 1-3s."""
@@ -247,7 +271,7 @@ class IXLSession:
         if self._logged_in:
             return
 
-        cached = load_session()
+        cached = load_session(path=self._session_path)
         if cached:
             cookies = cached.get("cookies", cached)
             domains = cached.get("domains", {})
@@ -368,7 +392,7 @@ class IXLSession:
             self.s.cookies.set(name, value, domain=domain, path="/")
 
         self._logged_in = True
-        save_session({"cookies": cookie_dict, "domains": cookie_domains})
+        save_session({"cookies": cookie_dict, "domains": cookie_domains}, path=self._session_path)
         _log("Session cookies saved.", self.verbose)
 
     # -- data fetching --
