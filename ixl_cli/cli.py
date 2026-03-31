@@ -299,6 +299,7 @@ def output_summary(
     trouble_spots: list[dict],
     usage: dict,
     as_json: bool,
+    goal_status: dict | None = None,
 ) -> None:
     if as_json:
         data = {
@@ -309,6 +310,8 @@ def output_summary(
             "trouble_spots": trouble_spots,
             "usage": usage,
         }
+        if goal_status is not None:
+            data["goals"] = goal_status
         print(json.dumps(data, indent=2))
         return
 
@@ -329,6 +332,10 @@ def output_summary(
 
     print("\n--- Usage ---")
     output_usage(usage, False)
+
+    if goal_status is not None:
+        print("\n--- Goals ---")
+        output_goals(goal_status, False)
 
 
 # ---------------------------------------------------------------------------
@@ -439,7 +446,16 @@ def cmd_summary(args: argparse.Namespace) -> None:
     skills_data = scrape_skills(session)
     trouble_spots = scrape_trouble_spots(session)
     usage = scrape_usage(session)
-    output_summary(child, children, diagnostics, skills_data, trouble_spots, usage, args.json)
+
+    # Goals (optional — only included if configured)
+    goals = load_goals()
+    goal_status = None
+    if goals is not None:
+        days_since_monday = datetime.now().weekday()
+        week_usage = scrape_usage(session, days=days_since_monday + 1)
+        goal_status = evaluate_goals(goals, week_usage, skills_data, trouble_spots)
+
+    output_summary(child, children, diagnostics, skills_data, trouble_spots, usage, args.json, goal_status=goal_status)
 
 
 # ---------------------------------------------------------------------------
