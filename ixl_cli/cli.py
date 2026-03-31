@@ -15,6 +15,7 @@ Usage:
 """
 
 import argparse
+import getpass
 import json
 import os
 import sys
@@ -27,6 +28,7 @@ from ixl_cli.session import (
     IXL_DIR,
     IXLSession,
     _ensure_dir,
+    _escape_env_value,
     _log,
 )
 from ixl_cli.scrapers.children import resolve_child, scrape_children
@@ -284,19 +286,20 @@ def cmd_init(args: argparse.Namespace) -> None:
     print("=" * 40)
     print("For school accounts, enter username@school (e.g., jdoe@myschool)")
     email = input("IXL Username (or username@school): ").strip()
-    password = input("IXL Password: ").strip()
+    password = getpass.getpass("IXL Password: ").strip()
     school = input("School slug (optional, press Enter to skip): ").strip()
 
     if not email or not password:
         print("Username and password are required.", file=sys.stderr)
         sys.exit(1)
 
-    with open(ENV_PATH, "w") as f:
-        f.write(f'IXL_EMAIL="{email}"\n')
-        f.write(f'IXL_PASSWORD="{password}"\n')
+    # Use os.open to create with 0o600 from the start (no TOCTOU race)
+    fd = os.open(str(ENV_PATH), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(f'IXL_EMAIL="{_escape_env_value(email)}"\n')
+        f.write(f'IXL_PASSWORD="{_escape_env_value(password)}"\n')
         if school:
-            f.write(f'IXL_SCHOOL="{school}"\n')
-    os.chmod(ENV_PATH, 0o600)
+            f.write(f'IXL_SCHOOL="{_escape_env_value(school)}"\n')
 
     print(f"\nCredentials saved to {ENV_PATH}")
     print("Run `ixl children` to verify login works.")

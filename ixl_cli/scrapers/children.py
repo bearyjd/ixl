@@ -53,10 +53,11 @@ def scrape_children(session: IXLSession) -> list[dict]:
         name = session.cfg.get("username", session.cfg.get("email", "Student"))
 
     # Try to get grade from score-grid-defaults
+    school_year_start = date(end.year, 8, 1) if end.month >= 8 else date(end.year - 1, 8, 1)
     defaults = session.fetch_json(
         "/analytics/score-grid-defaults",
         params={
-            "startDate": "2025-08-01",
+            "startDate": school_year_start.isoformat(),
             "endDate": end.isoformat(),
             "subjects": ALL_SUBJECTS,
             "student": "",

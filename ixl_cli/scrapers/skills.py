@@ -29,7 +29,7 @@ def _discover_active_grades(
     Checks default grade ± 4 levels (covers remedial and advanced work).
     """
     cache_key = f"_active_grades_{subject_int}"
-    cached = getattr(session, cache_key, None)
+    cached = session._cache.get(cache_key)
     if cached is not None:
         return cached
 
@@ -49,7 +49,7 @@ def _discover_active_grades(
     if not active:
         active = [default_grade]
 
-    setattr(session, cache_key, active)
+    session._cache[cache_key] = active
     return active
 
 
@@ -133,7 +133,9 @@ def scrape_skills(
         subject_ints = [0, 1, 5]
 
     end = date.today()
-    start_str = "2025-08-01"
+    # Compute school-year start dynamically (August 1 of current or previous year)
+    school_year_start = date(end.year, 8, 1) if end.month >= 8 else date(end.year - 1, 8, 1)
+    start_str = school_year_start.isoformat()
     defaults = session.fetch_json(
         "/analytics/score-grid-defaults",
         params={
@@ -147,7 +149,10 @@ def scrape_skills(
     if isinstance(defaults, dict):
         g = defaults.get("grade")
         if g is not None:
-            default_grade = int(g)
+            try:
+                default_grade = int(g)
+            except (ValueError, TypeError):
+                default_grade = 0
 
     skills_data: list[dict] = []
 

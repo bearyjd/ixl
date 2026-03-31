@@ -56,6 +56,36 @@ def _log(msg: str, verbose: bool = True) -> None:
         print(msg, file=sys.stderr)
 
 
+def _escape_env_value(val: str) -> str:
+    """Escape special chars for safe .env storage."""
+    val = val.replace("\\", "\\\\")
+    val = val.replace('"', '\\"')
+    val = val.replace("\n", "\\n")
+    return val
+
+
+def _unescape_env_value(val: str) -> str:
+    """Unescape .env value (reverse of _escape_env_value)."""
+    result = []
+    i = 0
+    while i < len(val):
+        if val[i] == "\\" and i + 1 < len(val):
+            nxt = val[i + 1]
+            if nxt == "n":
+                result.append("\n")
+            elif nxt == "\\":
+                result.append("\\")
+            elif nxt == '"':
+                result.append('"')
+            else:
+                result.append(nxt)
+            i += 2
+        else:
+            result.append(val[i])
+            i += 1
+    return "".join(result)
+
+
 def _load_env_file(path: Path) -> dict[str, str]:
     """Parse a .env file into a dict. Handles KEY=VALUE and KEY="VALUE"."""
     env: dict[str, str] = {}
@@ -74,7 +104,7 @@ def _load_env_file(path: Path) -> dict[str, str]:
             # Strip surrounding quotes
             if len(val) >= 2 and val[0] == val[-1] and val[0] in ('"', "'"):
                 val = val[1:-1]
-            env[key] = val
+            env[key] = _unescape_env_value(val)
     return env
 
 
@@ -132,9 +162,13 @@ def load_config() -> dict[str, str]:
 def save_session(data: dict) -> None:
     _ensure_dir()
     data["ts"] = time.time()
-    with open(SESSION_PATH, "w") as f:
+    # Atomic write: write to temp file, then rename into place.
+    # Use os.open to create with 0o600 from the start (no TOCTOU race).
+    tmp_path = SESSION_PATH.with_suffix(".tmp")
+    fd = os.open(str(tmp_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
         json.dump(data, f)
-    os.chmod(SESSION_PATH, 0o600)
+    os.replace(str(tmp_path), str(SESSION_PATH))
 
 
 def load_session() -> Optional[dict]:
@@ -169,6 +203,7 @@ class IXLSession:
         self.verbose = verbose
         self._logged_in = False
         self._last_request_time = 0.0
+        self._cache: dict = {}
 
     def _sleep_if_needed(self) -> None:
         """Add jitter between requests. IXL is pickier — use 1-3s."""
@@ -199,6 +234,10 @@ class IXLSession:
 
         if resp is None:
             raise RuntimeError("Request failed completely")
+        if resp.status_code == 429:
+            raise requests.exceptions.HTTPError(
+                f"Rate limited (429) after {max_retries} retries", response=resp,
+            )
         return resp
 
     # -- login / session cache --
@@ -259,6 +298,9 @@ class IXLSession:
         signin_path = f"/signin/{school}" if school else "/signin"
         signin_url = f"{BASE_URL}{signin_path}"
 
+        cookie_dict: dict[str, str] = {}
+        cookie_domains: dict[str, str] = {}
+
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             context = browser.new_context(user_agent=DEFAULT_UA)
@@ -283,13 +325,10 @@ class IXLSession:
 
                 # Visit analytics page to initialize report cookies
                 page.goto(f"{BASE_URL}/analytics/score-grid", wait_until="networkidle", timeout=30000)
-                import time as _time
-                _time.sleep(2)
+                time.sleep(2)
 
                 # Export ALL cookies from browser context, preserving domains
                 browser_cookies = context.cookies()
-                cookie_dict: dict[str, str] = {}
-                cookie_domains: dict[str, str] = {}
                 for c in browser_cookies:
                     domain = c.get("domain", "")
                     if "ixl.com" in domain:
@@ -340,14 +379,12 @@ class IXLSession:
         """Fetch JSON from an IXL API path."""
         self.ensure_logged_in()
         url = path if path.startswith("http") else f"{BASE_URL}{path}"
+        r = self._request(method, url, params=params, timeout=20, **kwargs)
+        r.raise_for_status()
         try:
-            r = self._request(method, url, params=params, timeout=20, **kwargs)
-            if r.status_code != 200:
-                _log(f"API {path} returned {r.status_code}", self.verbose)
-                return None
             return r.json()
-        except (ValueError, requests.RequestException) as exc:
-            _log(f"API {path} error: {exc}", self.verbose)
+        except ValueError as exc:
+            _log(f"API {path} JSON parse error: {exc}", self.verbose)
             return None
 
     def fetch_page(self, path: str, params: Optional[dict] = None) -> str:
