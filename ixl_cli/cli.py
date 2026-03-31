@@ -25,12 +25,14 @@ import requests
 
 from ixl_cli.session import (
     ENV_PATH,
+    GOALS_PATH,
     IXL_DIR,
     IXLSession,
     _ensure_dir,
     _escape_env_value,
     _log,
 )
+from ixl_cli.goals import evaluate_goals, generate_defaults, load_goals, save_goals
 from ixl_cli.scrapers.children import resolve_child, scrape_children
 from ixl_cli.scrapers.diagnostics import scrape_diagnostics
 from ixl_cli.scrapers.skills import scrape_skills
@@ -235,6 +237,60 @@ def output_assigned(skills_data: list[dict], as_json: bool) -> None:
     print()
 
 
+def output_goals(goal_status: dict, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(goal_status, indent=2))
+        return
+    if not goal_status:
+        print("No goal data available.")
+        return
+
+    week_start = goal_status.get("week_start", "")
+    day = goal_status.get("day_of_week", 0)
+
+    from datetime import timedelta as td
+    try:
+        ws = datetime.fromisoformat(week_start)
+        we = ws + td(days=6)
+        header = f"  Weekly Goals ({ws.strftime('%a %b %d')} - {we.strftime('%a %b %d')})"
+    except (ValueError, TypeError):
+        header = "  Weekly Goals"
+
+    print(f"\n{header}")
+    print(f"  Day {day} of 7\n")
+
+    labels = {
+        "time_min": "Time spent",
+        "questions": "Questions",
+        "skills_mastered": "Skills mastered",
+        "days_active": "Days active",
+        "trouble_spots_reduced": "Trouble spots",
+    }
+    units = {
+        "time_min": "min",
+        "trouble_spots_reduced": "reduced",
+    }
+
+    metrics = goal_status.get("metrics", {})
+    for key, label in labels.items():
+        m = metrics.get(key)
+        if not m:
+            continue
+        target = m["target"]
+        actual = m["actual"]
+        status = m["status"]
+        pct = m["pct"]
+        unit = units.get(key, "")
+        suffix = f" {unit}" if unit else ""
+
+        filled = min(10, int(pct / 10))
+        bar = "=" * filled + "-" * (10 - filled)
+
+        print(f"    {label:<18} {actual:>4} / {target:<4}{suffix:<8} [{bar}]  {status}")
+
+    print()
+
+
 def output_summary(
     child: dict | None,
     children: list[dict],
@@ -341,6 +397,39 @@ def cmd_assigned(args: argparse.Namespace) -> None:
     output_assigned(skills_data, args.json)
 
 
+def cmd_goals(args: argparse.Namespace) -> None:
+    if args.init:
+        session = IXLSession(verbose=True)
+        _log("Generating goal defaults from last 14 days of usage...", True)
+
+        usage = scrape_usage(session, days=14)
+        skills_data = scrape_skills(session)
+        defaults = generate_defaults(usage, skills_data)
+        save_goals(defaults)
+
+        print(f"\nGoals saved to {GOALS_PATH}")
+        print(json.dumps(defaults, indent=2))
+        print(f"\nEdit {GOALS_PATH} to adjust targets.")
+        return
+
+    goals = load_goals()
+    if goals is None:
+        print("No goals configured. Run `ixl goals --init`.")
+        return
+
+    session = IXLSession(verbose=not args.json)
+
+    # Fetch current week's data (days since Monday)
+    today = datetime.now()
+    days_since_monday = today.weekday()  # 0=Mon
+    usage = scrape_usage(session, days=days_since_monday + 1)
+    skills_data = scrape_skills(session)
+    trouble_spots = scrape_trouble_spots(session)
+
+    goal_status = evaluate_goals(goals, usage, skills_data, trouble_spots)
+    output_goals(goal_status, args.json)
+
+
 def cmd_summary(args: argparse.Namespace) -> None:
     session = IXLSession(verbose=not args.json)
     children = scrape_children(session)
@@ -410,6 +499,12 @@ def main() -> None:
     sp_sum.add_argument("--child", type=str, help="(ignored — for future multi-account use)")
     sp_sum.add_argument("--json", action="store_true", help="JSON output")
     sp_sum.set_defaults(func=cmd_summary)
+
+    # ixl goals
+    sp_goals = subparsers.add_parser("goals", help="Weekly goal tracking")
+    sp_goals.add_argument("--init", action="store_true", help="Generate goals from recent usage")
+    sp_goals.add_argument("--json", action="store_true", help="JSON output")
+    sp_goals.set_defaults(func=cmd_goals)
 
     args = parser.parse_args()
     if not args.command:
