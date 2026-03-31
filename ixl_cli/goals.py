@@ -8,6 +8,7 @@ current week's scraper data.
 import json
 import math
 import os
+from datetime import date, timedelta
 
 from ixl_cli.session import GOALS_PATH, IXL_DIR, _ensure_dir
 
@@ -37,6 +38,85 @@ def save_goals(goals: dict) -> None:
 def _round_up_to(value: float, multiple: int) -> int:
     """Round up to the nearest multiple."""
     return int(math.ceil(value / multiple)) * multiple
+
+
+def _compute_status(actual: float, target: float, day_of_week: int) -> str:
+    """Compute goal status: ahead, on_track, behind, or no_data."""
+    if target <= 0:
+        return "no_data"
+    expected_pace = target * (day_of_week / 7)
+    if actual >= expected_pace * 1.2:
+        return "ahead"
+    elif actual >= expected_pace * 0.8:
+        return "on_track"
+    else:
+        return "behind"
+
+
+def evaluate_goals(
+    goals: dict,
+    usage: dict,
+    skills_data: list,
+    trouble_spots: list,
+    day_of_week: int | None = None,
+) -> dict:
+    """Evaluate current progress against weekly goals.
+
+    Args:
+        goals: Loaded goals config (from load_goals).
+        usage: Output from scrape_usage (for current week).
+        skills_data: Output from scrape_skills.
+        trouble_spots: Output from scrape_trouble_spots.
+        day_of_week: Override for testing (1=Mon, 7=Sun). Auto-detected if None.
+
+    Returns dict with week_start, day_of_week, and per-metric status.
+    """
+    today = date.today()
+    if day_of_week is None:
+        day_of_week = today.isoweekday()  # 1=Mon, 7=Sun
+
+    # Compute week start (Monday)
+    week_start = today - timedelta(days=today.weekday())
+
+    weekly = goals.get("weekly", {})
+
+    # Gather actuals
+    actual_time = usage.get("time_spent_min", 0)
+    actual_questions = usage.get("questions_answered", 0)
+    actual_days = usage.get("days_active", 0)
+
+    # Count mastered skills (90+)
+    actual_mastered = 0
+    for subj in skills_data:
+        for sk in subj.get("skills", []):
+            if (sk.get("smart_score", 0) or 0) >= 90:
+                actual_mastered += 1
+
+    # Trouble spots: count current (lower is better, so we track reduction)
+    actual_trouble_reduced = 0  # Can't compute without baseline; default to 0
+
+    metrics = {}
+    for key, actual, target in [
+        ("time_min", actual_time, weekly.get("time_min", 0)),
+        ("questions", actual_questions, weekly.get("questions", 0)),
+        ("skills_mastered", actual_mastered, weekly.get("skills_mastered", 0)),
+        ("days_active", actual_days, weekly.get("days_active", 0)),
+        ("trouble_spots_reduced", actual_trouble_reduced, weekly.get("trouble_spots_reduced", 0)),
+    ]:
+        pct = int(actual / target * 100) if target > 0 else 0
+        status = _compute_status(actual, target, day_of_week)
+        metrics[key] = {
+            "target": target,
+            "actual": actual,
+            "status": status,
+            "pct": pct,
+        }
+
+    return {
+        "week_start": week_start.isoformat(),
+        "day_of_week": day_of_week,
+        "metrics": metrics,
+    }
 
 
 def generate_defaults(usage: dict, skills_data: list) -> dict:
