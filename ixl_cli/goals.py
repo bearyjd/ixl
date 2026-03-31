@@ -6,6 +6,7 @@ current week's scraper data.
 """
 
 import json
+import math
 import os
 
 from ixl_cli.session import GOALS_PATH, IXL_DIR, _ensure_dir
@@ -31,3 +32,45 @@ def save_goals(goals: dict) -> None:
         json.dump(goals, f, indent=2)
         f.write("\n")
     os.replace(str(tmp_path), str(GOALS_PATH))
+
+
+def _round_up_to(value: float, multiple: int) -> int:
+    """Round up to the nearest multiple."""
+    return int(math.ceil(value / multiple)) * multiple
+
+
+def generate_defaults(usage: dict, skills_data: list) -> dict:
+    """Compute smart weekly goal defaults from 14-day usage data.
+
+    Args:
+        usage: Output from scrape_usage(days=14).
+        skills_data: Output from scrape_skills().
+
+    Returns dict ready for save_goals().
+    """
+    total_time = usage.get("time_spent_min", 0)
+    total_questions = usage.get("questions_answered", 0)
+    total_days_active = usage.get("days_active", 0)
+
+    # Count skills with SmartScore >= 90 across all subjects
+    mastered_count = 0
+    for subj in skills_data:
+        for sk in subj.get("skills", []):
+            if (sk.get("smart_score", 0) or 0) >= 90:
+                mastered_count += 1
+
+    # Compute weekly averages (14 days = 2 weeks)
+    weekly_time = total_time / 2
+    weekly_questions = total_questions / 2
+    weekly_mastered = mastered_count / 2
+    weekly_days = total_days_active / 2
+
+    return {
+        "weekly": {
+            "time_min": max(60, _round_up_to(weekly_time + 1, 10)),
+            "questions": max(100, _round_up_to(weekly_questions + 1, 50)),
+            "skills_mastered": max(1, math.ceil(weekly_mastered)),
+            "days_active": max(3, math.ceil(weekly_days)),
+            "trouble_spots_reduced": 1,
+        }
+    }

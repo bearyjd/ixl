@@ -78,3 +78,63 @@ class TestSaveGoals:
 
         mode = oct(goals_path.stat().st_mode & 0o777)
         assert mode == "0o600"
+
+
+from ixl_cli.goals import generate_defaults
+
+
+class TestGenerateDefaults:
+    """Smart defaults from recent usage data."""
+
+    def test_generate_defaults_from_usage(self):
+        """Defaults computed from 14-day usage data."""
+        usage = {
+            "period": "last_14_days",
+            "time_spent_min": 200,
+            "questions_answered": 500,
+            "days_active": 8,
+        }
+        skills_data = [
+            {"subject": "Math", "skills": [
+                {"smart_score": 95, "name": "A"},
+                {"smart_score": 92, "name": "B"},
+                {"smart_score": 85, "name": "C"},
+                {"smart_score": 50, "name": "D"},
+            ]},
+            {"subject": "ELA", "skills": [
+                {"smart_score": 100, "name": "E"},
+            ]},
+        ]
+
+        result = generate_defaults(usage, skills_data)
+        weekly = result["weekly"]
+
+        # 200 min / 2 weeks = 100/week, round up to 110
+        assert weekly["time_min"] == 110
+        # 500 / 2 = 250/week, round up to 300
+        assert weekly["questions"] == 300
+        # 3 mastered (95, 92, 100) / 2 weeks = 1.5, round up = 2
+        assert weekly["skills_mastered"] == 2
+        # 8 days / 2 = 4/week
+        assert weekly["days_active"] == 4
+        # always 1
+        assert weekly["trouble_spots_reduced"] == 1
+
+    def test_generate_defaults_floors(self):
+        """Minimums enforced when usage is very low."""
+        usage = {
+            "period": "last_14_days",
+            "time_spent_min": 10,
+            "questions_answered": 5,
+            "days_active": 1,
+        }
+        skills_data = []
+
+        result = generate_defaults(usage, skills_data)
+        weekly = result["weekly"]
+
+        assert weekly["time_min"] == 60
+        assert weekly["questions"] == 100
+        assert weekly["skills_mastered"] == 1
+        assert weekly["days_active"] == 3
+        assert weekly["trouble_spots_reduced"] == 1
