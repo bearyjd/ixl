@@ -137,12 +137,10 @@ def load_config() -> dict[str, str]:
         cfg["school"] = os.environ["IXL_SCHOOL"]
 
     if not cfg.get("email") or not cfg.get("password"):
-        print(
-            "No credentials found. Set IXL_EMAIL/IXL_PASSWORD env vars,\n"
-            "create ~/.ixl/.env, or run `ixl init`.",
-            file=sys.stderr,
+        raise RuntimeError(
+            "No credentials found. Set IXL_EMAIL/IXL_PASSWORD env vars, "
+            "create ~/.ixl/.env, or run `ixl init`."
         )
-        sys.exit(1)
 
     # Parse username@school format
     email = cfg["email"]

@@ -41,6 +41,90 @@ from ixl_cli.scrapers.usage import scrape_usage
 
 
 # ---------------------------------------------------------------------------
+# Outcome helpers
+# ---------------------------------------------------------------------------
+
+
+def make_result(
+    *,
+    command: str,
+    status: str = "ok",
+    data=None,
+    warnings: list[dict] | None = None,
+    errors: list[dict] | None = None,
+    exit_code: int = 0,
+    summary: str | None = "Completed successfully.",
+) -> dict:
+    return {
+        "command": command,
+        "status": status,
+        "data": data,
+        "warnings": list(warnings or []),
+        "errors": list(errors or []),
+        "exit_code": exit_code,
+        "summary": summary,
+    }
+
+
+def add_warning(result: dict, *, code: str, message: str, stage: str, retryable: bool) -> None:
+    result["warnings"].append({
+        "code": code,
+        "message": message,
+        "stage": stage,
+        "retryable": retryable,
+    })
+    if result["status"] == "ok":
+        result["status"] = "warning"
+
+
+def add_error(result: dict, *, code: str, message: str, stage: str, retryable: bool) -> None:
+    result["errors"].append({
+        "code": code,
+        "message": message,
+        "stage": stage,
+        "retryable": retryable,
+    })
+    result["status"] = "error"
+
+
+def render_json_result(result: dict) -> dict:
+    payload = result.get("data") or {}
+    if not isinstance(payload, dict):
+        payload = {"data": payload}
+    return {
+        "status": result["status"],
+        "warnings": result["warnings"],
+        "errors": result["errors"],
+        **payload,
+    }
+
+
+def summarize_result(result: dict) -> str:
+    if result.get("summary"):
+        return result["summary"]
+    status = result.get("status")
+    if status == "ok":
+        return "Completed successfully."
+    if status == "warning":
+        return f"Completed with warnings ({len(result.get('warnings', []))})."
+    errors = result.get("errors", [])
+    if errors:
+        return f"Failed: {errors[0]['message']}."
+    return "Failed."
+
+
+def finalize_result(result: dict, *, as_json: bool) -> int:
+    if as_json:
+        print(json.dumps(render_json_result(result), indent=2))
+    else:
+        important_warnings = result.get("warnings", [])
+        for warning in important_warnings:
+            print(f"Warning [{warning['stage']}]: {warning['message']}", file=sys.stderr)
+        print(summarize_result(result))
+    return int(result.get("exit_code", 1))
+
+
+# ---------------------------------------------------------------------------
 # Output formatting
 # ---------------------------------------------------------------------------
 
@@ -291,6 +375,32 @@ def output_goals(goal_status: dict, as_json: bool) -> None:
     print()
 
 
+def output_compare(comparison: dict, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(comparison, indent=2))
+        return
+
+    children = comparison.get("children", [])
+    if not children:
+        print("No comparison data found.")
+        return
+
+    print(f"\n{'Name':<25} {'Grade':<8} {'Mastered':<10} {'Excellent':<10} {'Trouble':<8} {'Minutes':<8}")
+    print("-" * 80)
+    for child in children:
+        skills_summary = child.get("skills_summary", {})
+        usage = child.get("usage", {})
+        print(
+            f"{child.get('name', ''):<25} "
+            f"{child.get('grade', ''):<8} "
+            f"{skills_summary.get('mastered', 0):<10} "
+            f"{skills_summary.get('excellent', 0):<10} "
+            f"{child.get('trouble_spot_count', 0):<8} "
+            f"{usage.get('time_spent_min', 0):<8}"
+        )
+    print()
+
+
 def output_summary(
     child: dict | None,
     children: list[dict],
@@ -368,10 +478,11 @@ def cmd_init(args: argparse.Namespace) -> None:
     print("Run `ixl children` to verify login works.")
 
 
-def cmd_children(args: argparse.Namespace) -> None:
+def cmd_children(args: argparse.Namespace) -> dict:
     session = IXLSession(verbose=not args.json)
     children = scrape_children(session)
     output_children(children, args.json)
+    return make_result(command="children", data=children)
 
 
 def cmd_diagnostics(args: argparse.Namespace) -> None:
@@ -404,7 +515,7 @@ def cmd_assigned(args: argparse.Namespace) -> None:
     output_assigned(skills_data, args.json)
 
 
-def cmd_goals(args: argparse.Namespace) -> None:
+def cmd_goals(args: argparse.Namespace) -> dict:
     if args.init:
         session = IXLSession(verbose=True)
         _log("Generating goal defaults from last 14 days of usage...", True)
@@ -417,12 +528,23 @@ def cmd_goals(args: argparse.Namespace) -> None:
         print(f"\nGoals saved to {GOALS_PATH}")
         print(json.dumps(defaults, indent=2))
         print(f"\nEdit {GOALS_PATH} to adjust targets.")
-        return
+        return make_result(command="goals", data={"goals": defaults})
 
     goals = load_goals()
     if goals is None:
-        print("No goals configured. Run `ixl goals --init`.")
-        return
+        return make_result(
+            command="goals",
+            status="error",
+            data={},
+            errors=[{
+                "code": "goals.config_missing",
+                "message": "No goals configured. Run `ixl goals --init`.",
+                "stage": "goals",
+                "retryable": False,
+            }],
+            exit_code=2,
+            summary=None,
+        )
 
     session = IXLSession(verbose=not args.json)
 
@@ -435,9 +557,180 @@ def cmd_goals(args: argparse.Namespace) -> None:
 
     goal_status = evaluate_goals(goals, usage, skills_data, trouble_spots)
     output_goals(goal_status, args.json)
+    return make_result(command="goals", data={"goals": goal_status})
 
 
-def cmd_summary(args: argparse.Namespace) -> None:
+def _load_accounts() -> list[dict]:
+    from ixl_cli.compare import load_accounts
+
+    return load_accounts()
+
+
+def _build_comparison(summaries: list[dict]) -> dict:
+    from ixl_cli.compare import build_comparison
+
+    return build_comparison(summaries)
+
+
+def _load_notify_config() -> dict | None:
+    from ixl_cli.notify import load_notify_config
+
+    return load_notify_config()
+
+
+def _notify_all(
+    config: dict,
+    summary: dict,
+    goals: dict | None = None,
+    dry_run: bool = False,
+) -> list[dict]:
+    from ixl_cli.notify import notify_all
+
+    return notify_all(config, summary, goals, dry_run=dry_run)
+
+
+def cmd_compare(args: argparse.Namespace) -> dict:
+    accounts = _load_accounts()
+    if not accounts:
+        return make_result(
+            command="compare",
+            status="error",
+            data={},
+            errors=[{
+                "code": "compare.accounts_missing",
+                "message": "No accounts found. Create ~/.ixl/accounts.env.",
+                "stage": "compare",
+                "retryable": False,
+            }],
+            exit_code=2,
+            summary=None,
+        )
+
+    summaries = []
+    result = make_result(command="compare", data={"children": []})
+    for acct in accounts:
+        _log(f"Fetching data for {acct['name']}...", not args.json)
+        os.environ["IXL_EMAIL"] = acct["email"]
+        os.environ["IXL_PASSWORD"] = acct["password"]
+
+        try:
+            session = IXLSession(verbose=False)
+            children = scrape_children(session)
+            child = children[0] if children else None
+            diagnostics = scrape_diagnostics(session)
+            skills_data = scrape_skills(session)
+            trouble_spots = scrape_trouble_spots(session)
+            usage = scrape_usage(session)
+
+            summaries.append({
+                "student": child,
+                "diagnostics": diagnostics,
+                "skills": skills_data,
+                "trouble_spots": trouble_spots,
+                "usage": usage,
+            })
+        except Exception as e:
+            add_warning(
+                result,
+                code="compare.account_failed",
+                message=f"Failed to fetch data for {acct['name']}",
+                stage="compare",
+                retryable=True,
+            )
+            _log(f"  Error fetching {acct['name']}: {e}", True)
+
+    comparison = _build_comparison(summaries)
+    output_compare(comparison, args.json)
+    result["data"] = comparison
+    if not summaries:
+        result["status"] = "error"
+        result["warnings"] = []
+        result["errors"] = [{
+            "code": "compare.all_accounts_failed",
+            "message": "Failed to fetch data for all accounts.",
+            "stage": "compare",
+            "retryable": True,
+        }]
+        result["exit_code"] = 1
+        result["summary"] = None
+    return result
+
+
+def cmd_notify(args: argparse.Namespace) -> dict:
+    """Send notifications to configured webhooks."""
+    config = _load_notify_config()
+    if config is None:
+        return make_result(
+            command="notify",
+            status="error",
+            data={},
+            errors=[{
+                "code": "notify.config_missing",
+                "message": "No notification config. Create ~/.ixl/notifications.json.",
+                "stage": "notify",
+                "retryable": False,
+            }],
+            exit_code=2,
+            summary=None,
+        )
+
+    session = IXLSession(verbose=not args.json)
+    children = scrape_children(session)
+    child = children[0] if children else None
+    diagnostics = scrape_diagnostics(session)
+    skills_data = scrape_skills(session)
+    trouble_spots = scrape_trouble_spots(session)
+    usage = scrape_usage(session)
+
+    summary = {
+        "student": child,
+        "diagnostics": diagnostics,
+        "skills": skills_data,
+        "trouble_spots": trouble_spots,
+        "usage": usage,
+    }
+
+    goals_config = load_goals()
+    goal_status = None
+    if goals_config is not None:
+        days_since_monday = datetime.now().weekday()
+        week_usage = scrape_usage(session, days=days_since_monday + 1)
+        goal_status = evaluate_goals(goals_config, week_usage, skills_data, trouble_spots)
+
+    results = _notify_all(config, summary, goal_status, dry_run=args.dry_run)
+
+    if args.json:
+        print(json.dumps(results, indent=2))
+    else:
+        for r in results:
+            status = "DRY RUN" if r.get("dry_run") else ("OK" if r["sent"] else "FAILED")
+            print(f"  {r['format']:<10} {r['url'][:50]:<50} {status}")
+
+    result = make_result(command="notify", data={"results": results})
+    failed = [r for r in results if not r.get("dry_run") and not r.get("sent")]
+    succeeded = [r for r in results if r.get("dry_run") or r.get("sent")]
+    if failed and succeeded:
+        add_warning(
+            result,
+            code="notify.delivery_failed",
+            message=f"{len(failed)} notification deliveries failed.",
+            stage="notify",
+            retryable=True,
+        )
+    elif failed and not succeeded:
+        add_error(
+            result,
+            code="notify.all_deliveries_failed",
+            message="All notification deliveries failed.",
+            stage="notify",
+            retryable=True,
+        )
+        result["exit_code"] = 1
+        result["summary"] = None
+    return result
+
+
+def cmd_summary(args: argparse.Namespace) -> dict:
     session = IXLSession(verbose=not args.json)
     children = scrape_children(session)
     child = children[0] if children else None
@@ -456,6 +749,19 @@ def cmd_summary(args: argparse.Namespace) -> None:
         goal_status = evaluate_goals(goals, week_usage, skills_data, trouble_spots)
 
     output_summary(child, children, diagnostics, skills_data, trouble_spots, usage, args.json, goal_status=goal_status)
+
+    data = {
+        "student": child,
+        "timestamp": datetime.now().isoformat(),
+        "diagnostics": diagnostics,
+        "skills": skills_data,
+        "trouble_spots": trouble_spots,
+        "usage": usage,
+    }
+    if goal_status is not None:
+        data["goals"] = goal_status
+
+    return make_result(command="summary", data=data)
 
 
 # ---------------------------------------------------------------------------
@@ -507,14 +813,28 @@ def main() -> None:
     # ixl assigned
     sp_assigned = subparsers.add_parser("assigned", help="Teacher-assigned skills remaining")
     sp_assigned.add_argument("--subject", type=str, help="Filter by subject (math, ela, spanish)")
+    sp_assigned.add_argument("--priority", action="store_true", help="Sort remaining skills by urgency")
     sp_assigned.add_argument("--json", action="store_true", help="JSON output")
     sp_assigned.set_defaults(func=cmd_assigned)
+
+    # ixl compare
+    sp_compare = subparsers.add_parser("compare", help="Compare across student accounts")
+    sp_compare.add_argument("--json", action="store_true", help="JSON output")
+    sp_compare.set_defaults(func=cmd_compare)
 
     # ixl summary
     sp_sum = subparsers.add_parser("summary", help="Full summary (all data)")
     sp_sum.add_argument("--child", type=str, help="(ignored — for future multi-account use)")
     sp_sum.add_argument("--json", action="store_true", help="JSON output")
+    sp_sum.add_argument("--format", choices=["json", "csv", "html"], help="Output format")
+    sp_sum.add_argument("--no-save", action="store_true", help="Don't save snapshot for trend tracking")
     sp_sum.set_defaults(func=cmd_summary)
+
+    # ixl notify
+    sp_notify = subparsers.add_parser("notify", help="Send notifications via webhooks")
+    sp_notify.add_argument("--dry-run", action="store_true", help="Show what would be sent")
+    sp_notify.add_argument("--json", action="store_true", help="JSON output")
+    sp_notify.set_defaults(func=cmd_notify)
 
     # ixl goals
     sp_goals = subparsers.add_parser("goals", help="Weekly goal tracking")
@@ -528,15 +848,46 @@ def main() -> None:
         sys.exit(1)
 
     try:
-        args.func(args)
+        result = args.func(args)
+        if result is None:
+            result = make_result(command=args.command, data={})
+        sys.exit(finalize_result(result, as_json=getattr(args, "json", False)))
     except RuntimeError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
+        message = str(e)
+        error_code = "runtime.error"
+        exit_code = 1
+        if message.startswith("No credentials found"):
+            error_code = "config.credentials_missing"
+            exit_code = 2
+        result = make_result(
+            command=args.command or "ixl",
+            status="error",
+            errors=[{
+                "code": error_code,
+                "message": message,
+                "stage": args.command or "main",
+                "retryable": False,
+            }],
+            exit_code=exit_code,
+            summary=None,
+        )
+        sys.exit(finalize_result(result, as_json=getattr(args, "json", False)))
     except KeyboardInterrupt:
         sys.exit(130)
     except requests.RequestException as e:
-        print(f"Network error: {e}", file=sys.stderr)
-        sys.exit(1)
+        result = make_result(
+            command=args.command or "ixl",
+            status="error",
+            errors=[{
+                "code": "network.request_failed",
+                "message": f"Network error: {e}",
+                "stage": args.command or "main",
+                "retryable": True,
+            }],
+            exit_code=1,
+            summary=None,
+        )
+        sys.exit(finalize_result(result, as_json=getattr(args, "json", False)))
 
 
 if __name__ == "__main__":
