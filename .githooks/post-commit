@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Auto-bump version after feat: and fix: commits.
+#
+# feat: → minor bump (new commands/flags/behavior)
+# fix:  → patch bump (bug fixes only)
+#
+# Skips version bump commits to avoid infinite loops.
+
+set -euo pipefail
+
+MSG=$(git log -1 --pretty=%s HEAD)
+
+# Skip if this is already a version bump commit
+if [[ "$MSG" == "chore: bump version"* ]]; then
+  exit 0
+fi
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+if [[ "$MSG" =~ ^feat(\([^)]+\))?:  ]]; then
+  "$REPO_ROOT/scripts/bump-version.sh" minor
+elif [[ "$MSG" =~ ^fix(\([^)]+\))?:  ]]; then
+  "$REPO_ROOT/scripts/bump-version.sh" patch
+fi
