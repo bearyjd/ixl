@@ -17,8 +17,12 @@ fi
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 
-if [[ "$MSG" =~ ^feat(\([^)]+\))?:  ]]; then
+# Store regexes in variables — bash [[ =~ ]] requires this for patterns with ()
+feat_re='^feat(\([^)]+\))?:'
+fix_re='^fix(\([^)]+\))?:'
+
+if [[ "$MSG" =~ $feat_re ]]; then
   "$REPO_ROOT/scripts/bump-version.sh" minor
-elif [[ "$MSG" =~ ^fix(\([^)]+\))?:  ]]; then
+elif [[ "$MSG" =~ $fix_re ]]; then
   "$REPO_ROOT/scripts/bump-version.sh" patch
 fi
