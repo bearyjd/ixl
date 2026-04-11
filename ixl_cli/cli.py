@@ -26,14 +26,13 @@ import requests
 from ixl_cli.session import (
     ENV_PATH,
     GOALS_PATH,
-    IXL_DIR,
     IXLSession,
     _ensure_dir,
     _escape_env_value,
     _log,
 )
 from ixl_cli.goals import evaluate_goals, generate_defaults, load_goals, save_goals
-from ixl_cli.scrapers.children import resolve_child, scrape_children
+from ixl_cli.scrapers.children import scrape_children
 from ixl_cli.scrapers.diagnostics import scrape_diagnostics
 from ixl_cli.scrapers.skills import scrape_skills
 from ixl_cli.scrapers.trouble_spots import scrape_trouble_spots
@@ -241,7 +240,7 @@ def output_usage(usage: dict, as_json: bool) -> None:
     # Top categories
     categories = usage.get("top_categories", [])
     if categories:
-        print(f"\n    Top categories:")
+        print("\n    Top categories:")
         for cat in categories[:5]:
             print(f"      {cat.get('category', '')}: {cat.get('questions', 0)} questions")
 
@@ -481,7 +480,8 @@ def cmd_init(args: argparse.Namespace) -> None:
 def cmd_children(args: argparse.Namespace) -> dict:
     session = IXLSession(verbose=not args.json)
     children = scrape_children(session)
-    output_children(children, args.json)
+    if not args.json:
+        output_children(children, False)
     return make_result(command="children", data=children)
 
 
@@ -525,9 +525,10 @@ def cmd_goals(args: argparse.Namespace) -> dict:
         defaults = generate_defaults(usage, skills_data)
         save_goals(defaults)
 
-        print(f"\nGoals saved to {GOALS_PATH}")
-        print(json.dumps(defaults, indent=2))
-        print(f"\nEdit {GOALS_PATH} to adjust targets.")
+        if not args.json:
+            print(f"\nGoals saved to {GOALS_PATH}")
+            print(json.dumps(defaults, indent=2))
+            print(f"\nEdit {GOALS_PATH} to adjust targets.")
         return make_result(command="goals", data={"goals": defaults})
 
     goals = load_goals()
@@ -556,7 +557,8 @@ def cmd_goals(args: argparse.Namespace) -> dict:
     trouble_spots = scrape_trouble_spots(session)
 
     goal_status = evaluate_goals(goals, usage, skills_data, trouble_spots)
-    output_goals(goal_status, args.json)
+    if not args.json:
+        output_goals(goal_status, False)
     return make_result(command="goals", data={"goals": goal_status})
 
 
@@ -640,19 +642,19 @@ def cmd_compare(args: argparse.Namespace) -> dict:
             _log(f"  Error fetching {acct['name']}: {e}", True)
 
     comparison = _build_comparison(summaries)
-    output_compare(comparison, args.json)
     result["data"] = comparison
     if not summaries:
-        result["status"] = "error"
-        result["warnings"] = []
-        result["errors"] = [{
-            "code": "compare.all_accounts_failed",
-            "message": "Failed to fetch data for all accounts.",
-            "stage": "compare",
-            "retryable": True,
-        }]
+        add_error(
+            result,
+            code="compare.all_accounts_failed",
+            message="Failed to fetch data for all accounts.",
+            stage="compare",
+            retryable=True,
+        )
         result["exit_code"] = 1
         result["summary"] = None
+    if not args.json:
+        output_compare(comparison, False)
     return result
 
 
@@ -699,9 +701,7 @@ def cmd_notify(args: argparse.Namespace) -> dict:
 
     results = _notify_all(config, summary, goal_status, dry_run=args.dry_run)
 
-    if args.json:
-        print(json.dumps(results, indent=2))
-    else:
+    if not args.json:
         for r in results:
             status = "DRY RUN" if r.get("dry_run") else ("OK" if r["sent"] else "FAILED")
             print(f"  {r['format']:<10} {r['url'][:50]:<50} {status}")
@@ -748,7 +748,8 @@ def cmd_summary(args: argparse.Namespace) -> dict:
         week_usage = scrape_usage(session, days=days_since_monday + 1)
         goal_status = evaluate_goals(goals, week_usage, skills_data, trouble_spots)
 
-    output_summary(child, children, diagnostics, skills_data, trouble_spots, usage, args.json, goal_status=goal_status)
+    if not args.json:
+        output_summary(child, children, diagnostics, skills_data, trouble_spots, usage, False, goal_status=goal_status)
 
     data = {
         "student": child,

@@ -289,6 +289,40 @@ def test_finalize_result_prints_warning_summary_and_details(capsys):
     assert "Warning [compare]: Failed to fetch data for ford" in captured.err
 
 
+def test_main_summary_json_outputs_single_valid_json_envelope(capsys):
+    """ixl summary --json must emit exactly ONE JSON object with status/warnings/errors envelope.
+
+    Previously cmd_summary called output_summary(..., as_json=True) which printed raw
+    data JSON, then finalize_result also printed the envelope JSON — resulting in two
+    JSON blobs on stdout, breaking any consumer that calls json.loads().
+    """
+    with (
+        patch("sys.argv", ["ixl", "summary", "--json"]),
+        patch("ixl_cli.cli.IXLSession", return_value=object()),
+        patch("ixl_cli.cli.scrape_children", return_value=[{"name": "Ford", "grade": "3"}]),
+        patch("ixl_cli.cli.scrape_diagnostics", return_value=[]),
+        patch("ixl_cli.cli.scrape_skills", return_value=[]),
+        patch("ixl_cli.cli.scrape_trouble_spots", return_value=[]),
+        patch("ixl_cli.cli.scrape_usage", return_value={"time_spent_min": 12}),
+        patch("ixl_cli.cli.load_goals", return_value=None),
+    ):
+        with pytest.raises(SystemExit) as exc:
+            from ixl_cli.cli import main
+            main()
+
+    assert exc.value.code == 0
+    captured = capsys.readouterr()
+    # Must be exactly one JSON object — json.loads raises if there are two
+    payload = json.loads(captured.out)
+    # Must be the envelope format, not raw scraper data
+    assert "status" in payload
+    assert "warnings" in payload
+    assert "errors" in payload
+    assert payload["status"] == "ok"
+    # Data fields should be top-level (spread by render_json_result)
+    assert "student" in payload
+
+
 class TestPasswordEcho:
     """Bug #4: Password entered via input() — no terminal masking."""
 
@@ -298,7 +332,6 @@ class TestPasswordEcho:
 
         with (
             patch("ixl_cli.cli.ENV_PATH", env_path),
-            patch("ixl_cli.cli.IXL_DIR", tmp_ixl_dir),
             patch("ixl_cli.cli._ensure_dir"),
             patch("builtins.input", side_effect=["testuser@school", ""]),
             patch("ixl_cli.cli.getpass.getpass", return_value="secret123") as mock_getpass,
@@ -328,7 +361,6 @@ class TestEnvSpecialChars:
 
         with (
             patch("ixl_cli.cli.ENV_PATH", env_path),
-            patch("ixl_cli.cli.IXL_DIR", tmp_ixl_dir),
             patch("ixl_cli.cli._ensure_dir"),
             patch("builtins.input", side_effect=["testuser@school", ""]),
             patch("ixl_cli.cli.getpass.getpass", return_value=password),
@@ -350,7 +382,6 @@ class TestCredentialFilePermissions:
 
         with (
             patch("ixl_cli.cli.ENV_PATH", env_path),
-            patch("ixl_cli.cli.IXL_DIR", tmp_ixl_dir),
             patch("ixl_cli.cli._ensure_dir"),
             patch("builtins.input", side_effect=["testuser@school", ""]),
             patch("ixl_cli.cli.getpass.getpass", return_value="secret123"),
