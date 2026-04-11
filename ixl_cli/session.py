@@ -29,6 +29,7 @@ IXL_DIR = Path.home() / ".ixl"
 ENV_PATH = IXL_DIR / ".env"
 SESSION_PATH = IXL_DIR / "session.json"
 GOALS_PATH = IXL_DIR / "goals.json"
+ACCOUNTS_PATH = IXL_DIR / "accounts.env"
 
 BASE_URL = "https://www.ixl.com"
 
