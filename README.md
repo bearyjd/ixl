@@ -40,16 +40,21 @@ Config priority: env vars > `~/.ixl/.env`
 ## Usage
 
 ```
-ixl children                              # show student profile
-ixl assigned    [--subject SUBJ] [--json] # teacher-assigned skills remaining
-ixl diagnostics [--json]                  # diagnostic levels per subject
-ixl skills      [--subject SUBJ] [--json] # SmartScores per skill
-ixl trouble     [--json]                  # trouble spots report
-ixl usage       [--days N] [--json]       # usage stats
-ixl summary     [--json]                  # everything in one shot
+ixl init                                              # interactive credential setup
+ixl children                    [--json]              # show student profile
+ixl assigned    [--subject SUBJ] [--priority] [--json] # teacher-assigned skills remaining
+ixl diagnostics                 [--json]              # diagnostic levels per subject
+ixl skills      [--subject SUBJ] [--json]             # SmartScores per skill
+ixl trouble                     [--json]              # trouble spots report
+ixl usage       [--days N]      [--json]              # usage stats
+ixl summary     [--child NAME] [--format FMT] [--no-save] [--json]  # everything in one shot
+ixl compare                     [--json]              # side-by-side for all accounts.env children
+ixl notify      [--dry-run]     [--json]              # send webhook notifications
+ixl goals       [--init]        [--json]              # view or initialize weekly goals
+ixl trends      [--days N]      [--json]              # progress over time (requires snapshots)
 ```
 
-All commands accept `--json` for machine-readable output.
+All commands accept `--json` for machine-readable output. Exit codes: **0** success/partial, **1** runtime failure, **2** setup error (missing config/credentials), **130** interrupted.
 
 ## Examples
 
@@ -57,8 +62,8 @@ All commands accept `--json` for machine-readable output.
 # Human-readable summary
 ixl summary
 
-# How many assigned skills are left?
-ixl assigned
+# How many assigned skills are left? (sorted by urgency)
+ixl assigned --priority
 
 # JSON dump (what the cron agent runs)
 ixl summary --json
@@ -68,6 +73,60 @@ ixl skills --subject math --json
 
 # Usage over the last 30 days
 ixl usage --days 30
+
+# Compare all children side-by-side (reads ~/.ixl/accounts.env)
+ixl compare --json
+
+# Send webhook notification (dry run to preview)
+ixl notify --dry-run
+
+# Initialize weekly goals from recent usage
+ixl goals --init
+
+# View current goal status
+ixl goals --json
+
+# Progress trends over the last 14 days
+ixl trends --days 14
+
+# Export summary as CSV
+ixl summary --format csv
+```
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success (ok or warning with partial data) |
+| 1 | Runtime failure (scraping error, all deliveries failed) |
+| 2 | Setup error (missing credentials, missing config file) |
+| 130 | Interrupted (Ctrl-C) |
+
+## JSON Output Contract
+
+All `--json` output is wrapped in a status envelope:
+
+```json
+{
+  "status": "ok",
+  "warnings": [],
+  "errors": [],
+  "student": { "name": "...", "grade": "..." },
+  "...": "data fields spread inline"
+}
+```
+
+`status` is one of `"ok"`, `"warning"` (partial success), or `"error"`. Warnings are non-fatal; data may still be present. Errors indicate failure.
+
+```json
+{
+  "status": "warning",
+  "warnings": [
+    {"code": "compare.account_failed", "message": "...", "stage": "compare", "retryable": true}
+  ],
+  "errors": [],
+  "children": [...]
+}
 ```
 
 ## AI Agent Integration (OpenClaw / ChatGPT / etc)
@@ -118,12 +177,26 @@ You have access to the `ixl` command-line tool to fetch a student's IXL practice
 - `remaining`: [{id, name, smart_score, questions, skill_code, category, subject, suggested}]
 
 ## JSON Structure Guide for `ixl summary --json`:
+
+All commands return a status envelope:
+- `status`: "ok" | "warning" | "error"
+- `warnings`: [{code, message, stage, retryable}] — non-fatal issues; data may still be present
+- `errors`: [{code, message, stage, retryable}] — fatal issues
+
+Data fields are spread inline alongside the envelope:
 - `student`: {name, uid, grade}
 - `timestamp`: When the data was fetched
 - `diagnostics`: [{subject, overall_level, max_score, has_data, scores: []}]
 - `skills`: [{subject, grade, mastered, excellent, skills: [{id, name, smart_score, time_spent_min, questions, last_practiced, skill_code}]}]
 - `trouble_spots`: [{skill, name, skill_code, grade, missed_count, score}]
 - `usage`: {period, time_spent_min, questions_answered, skills_practiced, days_active, sessions: [...], top_categories: [...]}
+- `goals`: present when goals are configured — [{name, target, current, status, unit}]
+
+## Exit Codes:
+- 0 = success (ok or warning with partial data)
+- 1 = runtime failure (scraping error, all webhook deliveries failed)
+- 2 = setup error (missing credentials, missing config file)
+- 130 = interrupted (Ctrl-C)
 
 ## SmartScore Scale:
 - 0 = no practice
@@ -144,7 +217,7 @@ When summarizing for the user:
 
 - Logs in via Playwright (headless Chromium) because Cloudflare blocks raw HTTP login
 - After login, exports browser cookies to a `requests.Session` for all subsequent API calls
-- Caches session cookies to `~/.ixl/session.json` (60-min TTL, auto-refreshes)
+- Caches session per account at `~/.ixl/sessions/{sha256(email)[:12]}.json` (60-min TTL, auto-refreshes)
 - Fetches data from IXL's internal JSON XHR endpoints (same ones the analytics SPA uses)
 - All status/debug output goes to stderr; `--json` output is clean on stdout
 
@@ -152,8 +225,12 @@ When summarizing for the user:
 
 ```
 ~/.ixl/
-  .env              # IXL_EMAIL, IXL_PASSWORD, IXL_SCHOOL (0600)
-  session.json      # cached session cookies + domains (0600, auto-managed)
+  .env                              # IXL_EMAIL, IXL_PASSWORD (0600)
+  accounts.env                      # multi-child: name:email:password, one per line (0600)
+  sessions/{sha256(email)[:12]}.json  # per-account session cache (0600, auto-managed)
+  snapshots/                        # trend data written by ixl summary (auto-managed)
+  notifications.json                # webhook configs for ixl notify
+  goals.json                        # weekly goal targets (generated by ixl goals --init)
 ```
 
 ## Cron (Multiple Students)
