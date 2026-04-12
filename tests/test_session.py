@@ -137,6 +137,7 @@ class TestLoginFailure:
 
     def test_login_failure_before_cookies_gives_runtime_error(self, mock_session):
         """Login failure before cookie extraction should raise RuntimeError, not UnboundLocalError."""
+        pytest.importorskip("playwright")
         mock_session._logged_in = False
 
         mock_page = MagicMock()
