@@ -3,7 +3,6 @@ import json
 import os
 from argparse import Namespace
 from datetime import date
-from pathlib import Path
 from unittest.mock import patch
 
 from ixl_cli.session import SNAPSHOTS_DIR, IXL_DIR

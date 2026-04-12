@@ -87,7 +87,6 @@ def test_export_html_handles_empty_skills():
     assert "<table" in result
 
 
-import sys
 from argparse import Namespace
 from unittest.mock import patch
 

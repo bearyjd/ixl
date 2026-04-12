@@ -2,10 +2,9 @@
 
 import hashlib
 import json
-import os
 import stat
 from pathlib import Path
-from unittest.mock import patch, MagicMock, PropertyMock
+from unittest.mock import patch, MagicMock
 
 import pytest
 import requests
@@ -49,7 +48,7 @@ class TestSessionPathPerAccount:
         fake_ixl.mkdir(mode=0o700)
 
         with patch.object(sess_mod, "IXL_DIR", fake_ixl):
-            p = _session_path_for("alice@school")
+            _session_path_for("alice@school")
             # _session_path_for should create the sessions dir
             sessions_dir = fake_ixl / "sessions"
             assert sessions_dir.exists()
@@ -70,8 +69,6 @@ class TestSessionMigration:
         old_session_path = fake_ixl / "session.json"
         old_data = {"cookies": {"sid": "abc"}, "domains": {}, "ts": 9999999999.0}
         old_session_path.write_text(json.dumps(old_data))
-
-        sessions_dir = fake_ixl / "sessions"
 
         with patch.object(sess_mod, "IXL_DIR", fake_ixl), \
              patch.object(sess_mod, "SESSION_PATH", old_session_path):
@@ -94,7 +91,6 @@ class TestSessionMigration:
         sessions_dir.mkdir(mode=0o700)
 
         email = "alice@school"
-        per_account = sess_mod._session_path_for.__wrapped__(email) if hasattr(sess_mod._session_path_for, '__wrapped__') else None
 
         # Compute path manually
         h = hashlib.sha256(email.encode()).hexdigest()[:12]

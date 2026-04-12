@@ -1,9 +1,8 @@
 """Tests for ixl_cli.cli."""
 
 import json
-import os
 from argparse import Namespace
-from unittest.mock import call, patch
+from unittest.mock import patch
 
 import pytest
 

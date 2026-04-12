@@ -10,7 +10,7 @@ import math
 import os
 from datetime import date, timedelta
 
-from ixl_cli.session import GOALS_PATH, IXL_DIR, _ensure_dir
+from ixl_cli.session import GOALS_PATH, _ensure_dir
 
 
 def load_goals() -> dict | None:

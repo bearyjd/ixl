@@ -8,7 +8,7 @@ Uses two endpoints:
 SmartScores: 0-100, 80+ = proficient, 90+ = mastered (per IXL's system).
 """
 
-from datetime import date, timedelta
+from datetime import date
 from typing import Optional, Union
 
 import requests

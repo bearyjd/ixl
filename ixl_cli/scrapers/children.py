@@ -13,7 +13,7 @@ from typing import Optional
 
 import requests
 
-from ixl_cli.session import ALL_SUBJECTS, IXLSession, _log
+from ixl_cli.session import ALL_SUBJECTS, IXLSession
 
 
 def scrape_children(session: IXLSession) -> list[dict]:
