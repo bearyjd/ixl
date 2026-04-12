@@ -491,28 +491,36 @@ def cmd_children(args: argparse.Namespace) -> dict:
     return make_result(command="children", data=children)
 
 
-def cmd_diagnostics(args: argparse.Namespace) -> None:
+def cmd_diagnostics(args: argparse.Namespace) -> dict:
     session = IXLSession(verbose=not args.json)
     diagnostics = scrape_diagnostics(session)
-    output_diagnostics(diagnostics, args.json)
+    if not args.json:
+        output_diagnostics(diagnostics, False)
+    return make_result(command="diagnostics", data=diagnostics)
 
 
-def cmd_skills(args: argparse.Namespace) -> None:
+def cmd_skills(args: argparse.Namespace) -> dict:
     session = IXLSession(verbose=not args.json)
     skills_data = scrape_skills(session, subject=args.subject)
-    output_skills(skills_data, args.json)
+    if not args.json:
+        output_skills(skills_data, False)
+    return make_result(command="skills", data=skills_data)
 
 
-def cmd_trouble(args: argparse.Namespace) -> None:
+def cmd_trouble(args: argparse.Namespace) -> dict:
     session = IXLSession(verbose=not args.json)
     trouble_spots = scrape_trouble_spots(session)
-    output_trouble_spots(trouble_spots, args.json)
+    if not args.json:
+        output_trouble_spots(trouble_spots, False)
+    return make_result(command="trouble", data=trouble_spots)
 
 
-def cmd_usage(args: argparse.Namespace) -> None:
+def cmd_usage(args: argparse.Namespace) -> dict:
     session = IXLSession(verbose=not args.json)
     usage = scrape_usage(session, days=args.days)
-    output_usage(usage, args.json)
+    if not args.json:
+        output_usage(usage, False)
+    return make_result(command="usage", data=usage)
 
 
 def cmd_assigned(args: argparse.Namespace) -> dict:
