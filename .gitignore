@@ -11,3 +11,5 @@ session.json
 .sisyphus/
 NOTES.md
 .omc/
+.claude/
+.worktrees/
