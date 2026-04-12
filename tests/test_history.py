@@ -67,7 +67,12 @@ def test_load_snapshots_returns_last_n_days(tmp_path):
         fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w") as f:
             json.dump({"date": day, "skills_mastered": i}, f)
-    with patch("ixl_cli.history.SNAPSHOTS_DIR", snapshots_dir):
+    with (
+        patch("ixl_cli.history.SNAPSHOTS_DIR", snapshots_dir),
+        patch("ixl_cli.history.date") as mock_date,
+    ):
+        mock_date.today.return_value = date(2026, 4, 11)
+        mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
         result = load_snapshots(days=2)
     assert len(result) == 2
     assert result[0]["date"] == "2026-04-10"

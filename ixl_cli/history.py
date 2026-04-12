@@ -64,7 +64,7 @@ def load_snapshots(days: int = 30) -> list[dict]:
 
     today = date.today()
     result = []
-    for i in range(days, 0, -1):
+    for i in range(days - 1, -1, -1):
         day = today - timedelta(days=i)
         path = SNAPSHOTS_DIR / f"{day.isoformat()}.json"
         if path.exists():
