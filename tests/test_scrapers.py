@@ -3,8 +3,6 @@
 from argparse import Namespace
 from unittest.mock import patch
 
-import pytest
-
 from ixl_cli.scrapers.children import scrape_children
 from ixl_cli.scrapers.diagnostics import scrape_diagnostics
 from ixl_cli.scrapers.trouble_spots import scrape_trouble_spots
@@ -211,7 +209,7 @@ class TestScrapeUsage:
             "table": [],
             "categories": [],
         }
-        with patch.object(mock_session.s, "request", return_value=make_response(200, api_data)) as mock_req:
+        with patch.object(mock_session.s, "request", return_value=make_response(200, api_data)):
             result = scrape_usage(mock_session, days=14)
         assert result["period"] == "last_14_days"
 
