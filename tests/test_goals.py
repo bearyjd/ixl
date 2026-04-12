@@ -1,10 +1,8 @@
 """Tests for ixl_cli.goals."""
 
 import json
-import os
 from unittest.mock import patch
 
-import pytest
 
 
 class TestLoadGoals:
@@ -59,8 +57,7 @@ class TestSaveGoals:
             }
         }
 
-        with patch("ixl_cli.goals.GOALS_PATH", goals_path), \
-             patch("ixl_cli.goals.IXL_DIR", tmp_ixl_dir):
+        with patch("ixl_cli.goals.GOALS_PATH", goals_path):
             save_goals(goals_data)
             result = load_goals()
 
@@ -72,8 +69,7 @@ class TestSaveGoals:
 
         goals_path = tmp_ixl_dir / "goals.json"
 
-        with patch("ixl_cli.goals.GOALS_PATH", goals_path), \
-             patch("ixl_cli.goals.IXL_DIR", tmp_ixl_dir):
+        with patch("ixl_cli.goals.GOALS_PATH", goals_path):
             save_goals({"weekly": {"time_min": 60}})
 
         mode = oct(goals_path.stat().st_mode & 0o777)
