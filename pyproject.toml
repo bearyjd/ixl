@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ixl"
-version = "0.16.0"
+version = "0.16.1"
 description = "IXL student account CLI scraper"
 license = "MIT"
 requires-python = ">=3.10"
