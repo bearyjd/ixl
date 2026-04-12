@@ -11,7 +11,11 @@ Usage:
     ixl skills      [--child NAME] [--subject SUBJ] [--json]  — skill scores
     ixl trouble     [--child NAME] [--json]     — trouble spots
     ixl usage       [--child NAME] [--days N] [--json]         — usage stats
-    ixl summary     [--child NAME] [--json]     — everything in one shot
+    ixl summary     [--child NAME] [--no-save] [--json]        — everything in one shot
+    ixl trends      [--days N] [--json]         — historical progress trends
+    ixl goals       [--init] [--json]           — weekly goal tracking
+    ixl compare     [--json]                    — side-by-side for all accounts.env children
+    ixl notify      [--dry-run] [--json]        — send webhook notifications
 """
 
 import argparse
@@ -33,7 +37,7 @@ from ixl_cli.session import (
 )
 from ixl_cli.export import export_csv, export_html
 from ixl_cli.goals import evaluate_goals, generate_defaults, load_goals, save_goals
-from ixl_cli.history import save_snapshot
+from ixl_cli.history import _build_snapshot, compute_trends, load_snapshots, save_snapshot
 from ixl_cli.scrapers.children import scrape_children
 from ixl_cli.scrapers.diagnostics import scrape_diagnostics
 from ixl_cli.scrapers.skills import scrape_skills
@@ -748,17 +752,13 @@ def cmd_summary(args: argparse.Namespace) -> dict:
     if goals is not None:
         days_since_monday = datetime.now().weekday()
         week_usage = scrape_usage(session, days=days_since_monday + 1)
-        goal_status = evaluate_goals(goals, week_usage, skills_data, trouble_spots)
+        yesterday_snapshots = load_snapshots(days=1)
+        trouble_baseline = yesterday_snapshots[-1]["trouble_spot_count"] if yesterday_snapshots else None
+        goal_status = evaluate_goals(goals, week_usage, skills_data, trouble_spots, trouble_spot_baseline=trouble_baseline)
 
-    # Snapshot for trend tracking (skip if --no-save)
+    # Auto-save snapshot for trend tracking (skip with --no-save)
     if not getattr(args, "no_save", False):
-        save_snapshot({
-            "student": child,
-            "diagnostics": diagnostics,
-            "skills": skills_data,
-            "trouble_spots": trouble_spots,
-            "usage": usage,
-        })
+        save_snapshot(_build_snapshot(skills_data, trouble_spots, usage))
 
     # Export formats: print and return early
     fmt = getattr(args, "format", None)
@@ -784,6 +784,43 @@ def cmd_summary(args: argparse.Namespace) -> dict:
         data["goals"] = goal_status
 
     return make_result(command="summary", data=data)
+
+
+def cmd_trends(args: argparse.Namespace) -> dict:
+    """Show historical trends from saved snapshots."""
+    snapshots = load_snapshots(days=args.days)
+    if not snapshots:
+        result = make_result(command="trends", data={"trends": {"datapoints": [], "deltas": {}}})
+        add_warning(
+            result,
+            code="trends.no_data",
+            message=f"No snapshots found for the last {args.days} days. Run `ixl summary` at least twice to build history.",
+            stage="trends",
+            retryable=False,
+        )
+        return result
+
+    trends = compute_trends(snapshots)
+
+    if not args.json:
+        deltas = trends.get("deltas", {})
+        print(f"\n  Trends (last {len(snapshots)} snapshots over {args.days} days):")
+        labels = {
+            "skills_mastered": "Skills mastered",
+            "skills_excellent": "Skills excellent",
+            "trouble_spot_count": "Trouble spots",
+            "time_spent_min": "Time (min)",
+            "questions_answered": "Questions answered",
+            "days_active": "Days active",
+        }
+        for key, label in labels.items():
+            if key in deltas:
+                delta = deltas[key]
+                sign = "+" if delta > 0 else ""
+                print(f"    {label:<22} {sign}{delta}")
+        print()
+
+    return make_result(command="trends", data={"trends": trends})
 
 
 # ---------------------------------------------------------------------------
@@ -863,6 +900,12 @@ def main() -> None:
     sp_goals.add_argument("--init", action="store_true", help="Generate goals from recent usage")
     sp_goals.add_argument("--json", action="store_true", help="JSON output")
     sp_goals.set_defaults(func=cmd_goals)
+
+    # ixl trends
+    sp_trends = subparsers.add_parser("trends", help="Show historical progress trends")
+    sp_trends.add_argument("--days", type=int, default=30, help="Days to look back (default 30)")
+    sp_trends.add_argument("--json", action="store_true", help="JSON output")
+    sp_trends.set_defaults(func=cmd_trends)
 
     args = parser.parse_args()
     if not args.command:
