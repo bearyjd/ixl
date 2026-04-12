@@ -515,10 +515,43 @@ def cmd_usage(args: argparse.Namespace) -> None:
     output_usage(usage, args.json)
 
 
-def cmd_assigned(args: argparse.Namespace) -> None:
+def cmd_assigned(args: argparse.Namespace) -> dict:
     session = IXLSession(verbose=not args.json)
     skills_data = scrape_skills(session, subject=args.subject)
-    output_assigned(skills_data, args.json)
+
+    all_remaining: list[dict] = []
+    totals: dict[str, dict] = {}
+    for subj in skills_data:
+        subject = subj.get("subject", "Unknown")
+        assigned = [sk for sk in subj.get("skills", []) if sk.get("suggested")]
+        done = [sk for sk in assigned if (sk.get("smart_score", 0) or 0) >= 80]
+        not_started = [sk for sk in assigned if sk.get("questions", 0) == 0]
+        in_progress = [
+            sk for sk in assigned
+            if sk.get("questions", 0) > 0 and (sk.get("smart_score", 0) or 0) < 80
+        ]
+        totals[subject] = {
+            "assigned": len(assigned),
+            "done": len(done),
+            "in_progress": len(in_progress),
+            "not_started": len(not_started),
+            "remaining": len(not_started) + len(in_progress),
+        }
+        for sk in not_started + in_progress:
+            all_remaining.append({**sk, "subject": subject})
+
+    if getattr(args, "priority", False):
+        all_remaining.sort(key=lambda sk: (
+            0 if sk.get("questions", 0) == 0 else 1,
+            sk.get("smart_score", 0) or 0,
+        ))
+
+    active_totals = {k: v for k, v in totals.items() if v["assigned"] > 0}
+
+    if not args.json:
+        output_assigned(skills_data, False)
+
+    return make_result(command="assigned", data={"totals": active_totals, "remaining": all_remaining})
 
 
 def cmd_goals(args: argparse.Namespace) -> dict:
