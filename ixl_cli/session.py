@@ -31,6 +31,7 @@ SESSION_PATH = IXL_DIR / "session.json"
 GOALS_PATH = IXL_DIR / "goals.json"
 ACCOUNTS_PATH = IXL_DIR / "accounts.env"
 NOTIFICATIONS_PATH = IXL_DIR / "notifications.json"
+SNAPSHOTS_DIR = IXL_DIR / "snapshots"
 
 BASE_URL = "https://www.ixl.com"
 

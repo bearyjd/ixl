@@ -10,3 +10,4 @@ build/
 session.json
 .sisyphus/
 NOTES.md
+.omc/
