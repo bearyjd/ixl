@@ -59,6 +59,7 @@ def evaluate_goals(
     skills_data: list,
     trouble_spots: list,
     day_of_week: int | None = None,
+    trouble_spot_baseline: int | None = None,
 ) -> dict:
     """Evaluate current progress against weekly goals.
 
@@ -93,7 +94,11 @@ def evaluate_goals(
                 actual_mastered += 1
 
     # Trouble spots: count current (lower is better, so we track reduction)
-    actual_trouble_reduced = 0  # Can't compute without baseline; default to 0
+    current_trouble_count = len(trouble_spots)
+    if trouble_spot_baseline is not None:
+        actual_trouble_reduced = max(0, trouble_spot_baseline - current_trouble_count)
+    else:
+        actual_trouble_reduced = 0
 
     metrics = {}
     for key, actual, target in [
