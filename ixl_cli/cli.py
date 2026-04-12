@@ -31,7 +31,9 @@ from ixl_cli.session import (
     _escape_env_value,
     _log,
 )
+from ixl_cli.export import export_csv, export_html
 from ixl_cli.goals import evaluate_goals, generate_defaults, load_goals, save_goals
+from ixl_cli.history import save_snapshot
 from ixl_cli.scrapers.children import scrape_children
 from ixl_cli.scrapers.diagnostics import scrape_diagnostics
 from ixl_cli.scrapers.skills import scrape_skills
@@ -747,6 +749,25 @@ def cmd_summary(args: argparse.Namespace) -> dict:
         days_since_monday = datetime.now().weekday()
         week_usage = scrape_usage(session, days=days_since_monday + 1)
         goal_status = evaluate_goals(goals, week_usage, skills_data, trouble_spots)
+
+    # Snapshot for trend tracking (skip if --no-save)
+    if not getattr(args, "no_save", False):
+        save_snapshot({
+            "student": child,
+            "diagnostics": diagnostics,
+            "skills": skills_data,
+            "trouble_spots": trouble_spots,
+            "usage": usage,
+        })
+
+    # Export formats: print and return early
+    fmt = getattr(args, "format", None)
+    if fmt == "csv":
+        print(export_csv({"skills": skills_data}, child), end="")
+        return make_result(command="summary", data={})
+    if fmt == "html":
+        print(export_html({"skills": skills_data}, child), end="")
+        return make_result(command="summary", data={})
 
     if not args.json:
         output_summary(child, children, diagnostics, skills_data, trouble_spots, usage, False, goal_status=goal_status)
