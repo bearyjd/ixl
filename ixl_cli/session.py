@@ -21,6 +21,17 @@ from typing import Optional, Union
 
 import requests
 
+# Playwright is optional — only needed for login. Imported at module scope
+# (guarded) rather than lazily inside _do_login() so that
+# `unittest.mock.patch("ixl_cli.session.sync_playwright", ...)` actually
+# intercepts the call the way test authors expect; a function-local import
+# would resolve the real `playwright.sync_api.sync_playwright` at call time
+# and silently ignore any patch of the module-level name.
+try:
+    from playwright.sync_api import sync_playwright
+except ImportError:
+    sync_playwright = None
+
 # ---------------------------------------------------------------------------
 # Config / paths
 # ---------------------------------------------------------------------------
@@ -303,10 +314,7 @@ class IXLSession:
         browser via Playwright. After login, cookies are exported to the
         requests.Session for all subsequent API calls.
         """
-        # Lazy import — playwright is optional, only needed for login
-        try:
-            from playwright.sync_api import sync_playwright
-        except ImportError:
+        if sync_playwright is None:
             raise RuntimeError(
                 "Playwright is required for IXL login but not installed.\n"
                 "Install it with:\n"
