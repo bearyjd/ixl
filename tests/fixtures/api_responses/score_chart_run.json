@@ -1,0 +1,58 @@
+{
+  "_fixture_note": "SYNTHETIC test fixture, NOT a live capture from IXL. All names, ids, and scores below are placeholder-only (fake student, fake skill ids, made-up SmartScores) hand-built to match the response shape described in NOTES.md for GET /analytics/score-chart/run. Do not treat any value here as real IXL data.",
+  "student": "Test Student",
+  "gradesModeData": {
+    "graph": {
+      "mastered": {"numSkills": 1},
+      "excellent": {"numSkills": 1}
+    },
+    "table": [
+      {
+        "categories": [
+          {
+            "categoryName": "Counting and number patterns",
+            "categoryCode": "A",
+            "skills": [
+              {
+                "permacode": "TEST-SKILL-001",
+                "lightweightSkillNumber": "1",
+                "skillName": "Counting review - up to 10 (fake)",
+                "score": 95,
+                "secondsSpent": 345,
+                "questionsAnswered": 24,
+                "lastPracticedLocalDateStr": "2026-01-05",
+                "isSkillSuggested": true
+              },
+              {
+                "permacode": "TEST-SKILL-002",
+                "lightweightSkillNumber": "2",
+                "skillName": "Counting review - up to 20 (fake)",
+                "score": 62,
+                "secondsSpent": 180,
+                "questionsAnswered": 12,
+                "lastPracticedLocalDateStr": "2026-01-06",
+                "isSkillSuggested": false
+              }
+            ]
+          },
+          {
+            "categoryName": "Addition (fake category)",
+            "categoryCode": "B",
+            "skills": [
+              {
+                "permacode": "TEST-SKILL-003",
+                "lightweightSkillNumber": "1",
+                "skillName": "Addition facts - sums up to 10 (fake)",
+                "score": 0,
+                "secondsSpent": 0,
+                "questionsAnswered": 0,
+                "lastPracticedLocalDateStr": "",
+                "isSkillSuggested": true
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

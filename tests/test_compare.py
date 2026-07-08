@@ -1,5 +1,8 @@
+import os
+from argparse import Namespace
 from unittest.mock import patch
 
+from ixl_cli.cli import cmd_compare
 from ixl_cli.session import ACCOUNTS_PATH, IXL_DIR
 
 
@@ -89,3 +92,100 @@ def test_build_comparison_handles_missing_student():
 def test_build_comparison_returns_empty_children_for_empty_input():
     result = build_comparison([])
     assert result == {"children": []}
+
+
+# ---------------------------------------------------------------------------
+# cmd_compare() env-var mutation (Bug: os.environ leak, see roadmap item 3)
+# ---------------------------------------------------------------------------
+
+def test_cmd_compare_restores_env_after_loop(monkeypatch):
+    """IXL_EMAIL/IXL_PASSWORD must be restored to their pre-call values
+    after cmd_compare()'s account loop, success or failure."""
+    monkeypatch.setenv("IXL_EMAIL", "original@school")
+    monkeypatch.setenv("IXL_PASSWORD", "original-pw")
+
+    accounts = [
+        {"name": "ford", "email": "ford@school", "password": "pw1"},
+        {"name": "maya", "email": "maya@school", "password": "pw2"},
+    ]
+
+    with (
+        patch("ixl_cli.cli._load_accounts", return_value=accounts),
+        patch("ixl_cli.cli.IXLSession", return_value=object()),
+        patch("ixl_cli.cli.scrape_children", return_value=[{"name": "Test Student", "grade": "3"}]),
+        patch("ixl_cli.cli.scrape_diagnostics", return_value=[]),
+        patch("ixl_cli.cli.scrape_skills", return_value=[]),
+        patch("ixl_cli.cli.scrape_trouble_spots", return_value=[]),
+        patch("ixl_cli.cli.scrape_usage", return_value={}),
+        patch("builtins.print"),
+    ):
+        cmd_compare(Namespace(json=True))
+
+    assert os.environ["IXL_EMAIL"] == "original@school"
+    assert os.environ["IXL_PASSWORD"] == "original-pw"
+
+
+def test_cmd_compare_restores_env_when_previously_unset(monkeypatch):
+    """If IXL_EMAIL/IXL_PASSWORD weren't set before the call, they must be
+    unset again afterward — not left holding the last account's creds."""
+    monkeypatch.delenv("IXL_EMAIL", raising=False)
+    monkeypatch.delenv("IXL_PASSWORD", raising=False)
+
+    accounts = [{"name": "ford", "email": "ford@school", "password": "pw1"}]
+
+    with (
+        patch("ixl_cli.cli._load_accounts", return_value=accounts),
+        patch("ixl_cli.cli.IXLSession", return_value=object()),
+        patch("ixl_cli.cli.scrape_children", return_value=[{"name": "Test Student", "grade": "3"}]),
+        patch("ixl_cli.cli.scrape_diagnostics", return_value=[]),
+        patch("ixl_cli.cli.scrape_skills", return_value=[]),
+        patch("ixl_cli.cli.scrape_trouble_spots", return_value=[]),
+        patch("ixl_cli.cli.scrape_usage", return_value={}),
+        patch("builtins.print"),
+    ):
+        cmd_compare(Namespace(json=True))
+
+    assert "IXL_EMAIL" not in os.environ
+    assert "IXL_PASSWORD" not in os.environ
+
+
+def test_cmd_compare_continues_after_one_account_fails(monkeypatch):
+    """A failure on one account must not stop later accounts from being
+    scraped, and must not corrupt the data collected for them."""
+    monkeypatch.setenv("IXL_EMAIL", "original@school")
+    monkeypatch.setenv("IXL_PASSWORD", "original-pw")
+
+    accounts = [
+        {"name": "ford", "email": "ford@school", "password": "pw1"},
+        {"name": "maya", "email": "maya@school", "password": "pw2"},
+    ]
+
+    children_results = [
+        RuntimeError("boom"),
+        [{"name": "Test Student Maya", "grade": "4"}],
+    ]
+
+    def fake_scrape_children(_session):
+        value = children_results.pop(0)
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+    with (
+        patch("ixl_cli.cli._load_accounts", return_value=accounts),
+        patch("ixl_cli.cli.IXLSession", return_value=object()),
+        patch("ixl_cli.cli.scrape_children", side_effect=fake_scrape_children),
+        patch("ixl_cli.cli.scrape_diagnostics", return_value=[]),
+        patch("ixl_cli.cli.scrape_skills", return_value=[]),
+        patch("ixl_cli.cli.scrape_trouble_spots", return_value=[]),
+        patch("ixl_cli.cli.scrape_usage", return_value={}),
+        patch("builtins.print"),
+    ):
+        result = cmd_compare(Namespace(json=True))
+
+    assert result["status"] == "warning"
+    assert result["warnings"][0]["code"] == "compare.account_failed"
+    assert len(result["data"]["children"]) == 1
+    assert result["data"]["children"][0]["name"] == "Test Student Maya"
+    assert os.environ["IXL_EMAIL"] == "original@school"
+    assert os.environ["IXL_PASSWORD"] == "original-pw"

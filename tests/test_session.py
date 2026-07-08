@@ -166,10 +166,18 @@ class TestLoginFailure:
 
         mock_playwright_fn = MagicMock(return_value=mock_cm)
 
-        with patch("ixl_cli.session.sync_playwright", mock_playwright_fn, create=True):
+        with patch("ixl_cli.session.sync_playwright", mock_playwright_fn):
             # Should raise RuntimeError, NOT UnboundLocalError
             with pytest.raises(RuntimeError, match="Login failed"):
                 mock_session._do_login()
+
+        # Guard against the mock silently not being used (e.g. if
+        # sync_playwright were reverted to a function-local import, this
+        # patch would have no effect and a real browser launch would be
+        # attempted instead of the mocked chain below).
+        mock_playwright_fn.assert_called_once()
+        mock_pw_instance.chromium.launch.assert_called_once_with(headless=True)
+        mock_page.goto.assert_called()
 
 
 class TestFetchJsonErrorContract:
