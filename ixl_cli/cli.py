@@ -657,36 +657,54 @@ def cmd_compare(args: argparse.Namespace) -> dict:
 
     summaries = []
     result = make_result(command="compare", data={"children": []})
-    for acct in accounts:
-        _log(f"Fetching data for {acct['name']}...", not args.json)
-        os.environ["IXL_EMAIL"] = acct["email"]
-        os.environ["IXL_PASSWORD"] = acct["password"]
 
-        try:
-            session = IXLSession(verbose=False)
-            children = scrape_children(session)
-            child = children[0] if children else None
-            diagnostics = scrape_diagnostics(session)
-            skills_data = scrape_skills(session)
-            trouble_spots = scrape_trouble_spots(session)
-            usage = scrape_usage(session)
+    # Save the pre-loop env vars so they can be restored after the loop,
+    # regardless of success or failure — the loop below overwrites
+    # IXL_EMAIL/IXL_PASSWORD per-account, and without this the mutation
+    # leaks into whatever env the caller had before this call.
+    orig_email = os.environ.get("IXL_EMAIL")
+    orig_password = os.environ.get("IXL_PASSWORD")
 
-            summaries.append({
-                "student": child,
-                "diagnostics": diagnostics,
-                "skills": skills_data,
-                "trouble_spots": trouble_spots,
-                "usage": usage,
-            })
-        except Exception as e:
-            add_warning(
-                result,
-                code="compare.account_failed",
-                message=f"Failed to fetch data for {acct['name']}",
-                stage="compare",
-                retryable=True,
-            )
-            _log(f"  Error fetching {acct['name']}: {e}", True)
+    try:
+        for acct in accounts:
+            _log(f"Fetching data for {acct['name']}...", not args.json)
+            os.environ["IXL_EMAIL"] = acct["email"]
+            os.environ["IXL_PASSWORD"] = acct["password"]
+
+            try:
+                session = IXLSession(verbose=False)
+                children = scrape_children(session)
+                child = children[0] if children else None
+                diagnostics = scrape_diagnostics(session)
+                skills_data = scrape_skills(session)
+                trouble_spots = scrape_trouble_spots(session)
+                usage = scrape_usage(session)
+
+                summaries.append({
+                    "student": child,
+                    "diagnostics": diagnostics,
+                    "skills": skills_data,
+                    "trouble_spots": trouble_spots,
+                    "usage": usage,
+                })
+            except Exception as e:
+                add_warning(
+                    result,
+                    code="compare.account_failed",
+                    message=f"Failed to fetch data for {acct['name']}",
+                    stage="compare",
+                    retryable=True,
+                )
+                _log(f"  Error fetching {acct['name']}: {e}", True)
+    finally:
+        if orig_email is None:
+            os.environ.pop("IXL_EMAIL", None)
+        else:
+            os.environ["IXL_EMAIL"] = orig_email
+        if orig_password is None:
+            os.environ.pop("IXL_PASSWORD", None)
+        else:
+            os.environ["IXL_PASSWORD"] = orig_password
 
     comparison = _build_comparison(summaries)
     result["data"] = comparison
